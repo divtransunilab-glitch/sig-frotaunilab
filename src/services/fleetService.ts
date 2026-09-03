@@ -45,9 +45,14 @@ export class FleetService {
     return saved;
   }
 
-  static deleteVehicle(id: string): void {
+  static async deleteVehicle(id: string): Promise<void> {
     const vehicles = this.getVehicles().filter((v) => v.id !== id);
     localStorage.setItem(STORAGE_KEY_VEHICLES, JSON.stringify(vehicles));
+    try {
+      await supabase.from('vehicles').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao deletar veículo do Supabase:', e);
+    }
   }
 
   // --- MOTORISTAS ---
@@ -114,9 +119,14 @@ export class FleetService {
     return saved;
   }
 
-  static deleteDriver(id: string): void {
+  static async deleteDriver(id: string): Promise<void> {
     const drivers = this.getDrivers().filter((d) => d.id !== id);
     localStorage.setItem(STORAGE_KEY_DRIVERS, JSON.stringify(drivers));
+    try {
+      await supabase.from('drivers').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao deletar motorista do Supabase:', e);
+    }
   }
 
   // --- CONTRATADAS ---
@@ -156,6 +166,16 @@ export class FleetService {
     return saved;
   }
 
+  static async deleteContractor(id: string): Promise<void> {
+    const contractors = this.getContractors().filter((c) => c.id !== id);
+    localStorage.setItem(STORAGE_KEY_CONTRACTORS, JSON.stringify(contractors));
+    try {
+      await supabase.from('contractors').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao deletar contratada do Supabase:', e);
+    }
+  }
+
   // --- UNIDADES INSTITUCIONAIS ---
   static getUnits(): InstitutionalUnit[] {
     const saved = localStorage.getItem(STORAGE_KEY_UNITS);
@@ -193,9 +213,14 @@ export class FleetService {
     return saved;
   }
 
-  static deleteUnit(id: string): void {
+  static async deleteUnit(id: string): Promise<void> {
     const units = this.getUnits().filter((u) => u.id !== id);
     localStorage.setItem(STORAGE_KEY_UNITS, JSON.stringify(units));
+    try {
+      await supabase.from('units').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao deletar unidade do Supabase:', e);
+    }
   }
 
   // --- RECOMENDAÇÃO DE VEÍCULO ---

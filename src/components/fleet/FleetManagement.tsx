@@ -237,9 +237,30 @@ export const FleetManagement: React.FC = () => {
     refreshData();
   };
 
-  const handleDeleteUnit = (id: string, name: string) => {
+  const handleDeleteVehicle = async (id: string, plate: string) => {
+    if (confirm(`Deseja realmente remover o veículo Placa ${plate}?`)) {
+      await FleetService.deleteVehicle(id);
+      refreshData();
+    }
+  };
+
+  const handleDeleteDriver = async (id: string, name: string) => {
+    if (confirm(`Deseja realmente remover o motorista ${name}?`)) {
+      await FleetService.deleteDriver(id);
+      refreshData();
+    }
+  };
+
+  const handleDeleteContractor = async (id: string, name: string) => {
+    if (confirm(`Deseja realmente remover a contratada ${name}?`)) {
+      await FleetService.deleteContractor(id);
+      refreshData();
+    }
+  };
+
+  const handleDeleteUnit = async (id: string, name: string) => {
     if (confirm(`Deseja realmente remover a unidade ${name}?`)) {
-      FleetService.deleteUnit(id);
+      await FleetService.deleteUnit(id);
       refreshData();
     }
   };
@@ -355,12 +376,22 @@ export const FleetManagement: React.FC = () => {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Ativo na Frota
                   </span>
-                  <button
-                    onClick={() => handleOpenVehicleModal(v)}
-                    className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenVehicleModal(v)}
+                      className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="Editar Veículo"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteVehicle(v.id, v.plate)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Excluir Veículo"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -412,12 +443,22 @@ export const FleetManagement: React.FC = () => {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Habilitado para Escala
                   </span>
-                  <button
-                    onClick={() => handleOpenDriverModal(d)}
-                    className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenDriverModal(d)}
+                      className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="Editar Motorista"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDriver(d.id, d.name)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Excluir Motorista"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -479,12 +520,22 @@ export const FleetManagement: React.FC = () => {
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                   <span className="text-slate-400 text-[11px]">Prestadora Credenciada</span>
-                  <button
-                    onClick={() => handleOpenContractorModal(c)}
-                    className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenContractorModal(c)}
+                      className="p-1.5 text-slate-500 hover:text-navy-900 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="Editar Contratada"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteContractor(c.id, c.name)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Excluir Contratada"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
