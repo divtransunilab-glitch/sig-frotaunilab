@@ -9,7 +9,10 @@ export class DistanceService {
     const saved = localStorage.getItem(STORAGE_KEY_CITIES);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: City[] = JSON.parse(saved);
+        if (parsed && parsed.length >= INITIAL_CITIES.length) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Erro ao ler cidades do storage', e);
       }
@@ -22,7 +25,10 @@ export class DistanceService {
     const saved = localStorage.getItem(STORAGE_KEY_DISTANCES);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: DistanceMatrixItem[] = JSON.parse(saved);
+        if (parsed && parsed.length >= INITIAL_DISTANCE_MATRIX.length) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Erro ao ler distâncias do storage', e);
       }
