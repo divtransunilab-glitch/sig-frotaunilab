@@ -1,5 +1,6 @@
 import { Vehicle, Driver, Contractor, VehicleType, InstitutionalUnit } from '../types';
 import { INITIAL_VEHICLES, INITIAL_DRIVERS, INITIAL_CONTRACTORS, INITIAL_UNITS } from '../data/initialData';
+import { supabase } from './supabaseClient';
 
 const STORAGE_KEY_VEHICLES = 'sigfrota_vehicles';
 const STORAGE_KEY_DRIVERS = 'sigfrota_drivers';
@@ -54,13 +55,34 @@ export class FleetService {
     const saved = localStorage.getItem(STORAGE_KEY_DRIVERS);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: Driver[] = JSON.parse(saved);
+        // Se a lista no storage tiver menos motoristas que os 27 oficiais, atualiza
+        if (parsed && parsed.length >= INITIAL_DRIVERS.length) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Erro ao ler motoristas do storage', e);
       }
     }
     localStorage.setItem(STORAGE_KEY_DRIVERS, JSON.stringify(INITIAL_DRIVERS));
     return INITIAL_DRIVERS;
+  }
+
+  static async fetchDriversFromSupabase(): Promise<Driver[]> {
+    try {
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_DRIVERS, JSON.stringify(data));
+        return data as Driver[];
+      }
+    } catch (e) {
+      console.warn('Falha ao sincronizar motoristas com Supabase:', e);
+    }
+    return this.getDrivers();
   }
 
   static getDriverById(id?: string): Driver | undefined {

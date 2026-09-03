@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vehicle, Driver, Contractor, InstitutionalUnit, VehicleType, DriverCategory } from '../../types';
 import { FleetService } from '../../services/fleetService';
 import { 
@@ -25,6 +25,14 @@ export const FleetManagement: React.FC = () => {
   const [drivers, setDrivers] = useState<Driver[]>(FleetService.getDrivers());
   const [contractors, setContractors] = useState<Contractor[]>(FleetService.getContractors());
   const [units, setUnits] = useState<InstitutionalUnit[]>(FleetService.getUnits());
+
+  useEffect(() => {
+    FleetService.fetchDriversFromSupabase().then((data) => {
+      if (data && data.length > 0) {
+        setDrivers([...data]);
+      }
+    });
+  }, []);
 
   // Vehicle Modal
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
