@@ -550,31 +550,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 </div>
               </div>
 
-              {/* Atalho de E-mails Autorizados no Supabase */}
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[11px] font-bold text-slate-500 block">Usuários Cadastrados no Supabase:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    'admin@admin.com',
-                    'audeniralima@unilab.edu.br',
-                    'tiagosousa@unilab.edu.br',
-                    'janaina.bonfim@unilab.edu.br'
-                  ].map((email) => (
-                    <button
-                      key={email}
-                      type="button"
-                      onClick={() => setLoginEmail(email)}
-                      className={`text-[10.5px] px-2 py-1 rounded-md font-mono border transition-colors ${
-                        loginEmail === email
-                          ? 'bg-brand-100 text-brand-900 border-brand-300 font-bold'
-                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                      }`}
-                    >
-                      {email}
-                    </button>
-                  ))}
-                </div>
-              </div>
+
 
               <button
                 type="submit"
