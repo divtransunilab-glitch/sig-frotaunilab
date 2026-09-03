@@ -27,6 +27,11 @@ export const FleetManagement: React.FC = () => {
   const [units, setUnits] = useState<InstitutionalUnit[]>(FleetService.getUnits());
 
   useEffect(() => {
+    FleetService.fetchVehiclesFromSupabase().then((data) => {
+      if (data && data.length > 0) {
+        setVehicles([...data]);
+      }
+    });
     FleetService.fetchDriversFromSupabase().then((data) => {
       if (data && data.length > 0) {
         setDrivers([...data]);

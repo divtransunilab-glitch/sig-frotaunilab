@@ -13,13 +13,34 @@ export class FleetService {
     const saved = localStorage.getItem(STORAGE_KEY_VEHICLES);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: Vehicle[] = JSON.parse(saved);
+        // Se a lista gravada no storage tiver menos veículos que a lista oficial de 62, atualiza
+        if (parsed && parsed.length >= INITIAL_VEHICLES.length) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Erro ao ler veículos do storage', e);
       }
     }
     localStorage.setItem(STORAGE_KEY_VEHICLES, JSON.stringify(INITIAL_VEHICLES));
     return INITIAL_VEHICLES;
+  }
+
+  static async fetchVehiclesFromSupabase(): Promise<Vehicle[]> {
+    try {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .order('plate', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_VEHICLES, JSON.stringify(data));
+        return data as Vehicle[];
+      }
+    } catch (e) {
+      console.warn('Falha ao sincronizar veículos com Supabase:', e);
+    }
+    return this.getVehicles();
   }
 
   static getVehicleById(id?: string): Vehicle | undefined {
