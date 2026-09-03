@@ -5,6 +5,7 @@ import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
 import { StatusBadge } from '../common/StatusBadge';
 import { PublicTransparencyView } from './PublicTransparencyView';
+import { supabase } from '../../services/supabaseClient';
 import { 
   Search, 
   SendHorizontal, 
@@ -53,9 +54,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   const allTrips = useMemo(() => TripService.getTrips(), []);
 
   // Login Form State
-  const [loginEmail, setLoginEmail] = useState('gestor.frota@unilab.edu.br');
-  const [loginPassword, setLoginPassword] = useState('••••••••');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const cities = DistanceService.getCities();
 
@@ -75,15 +77,37 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
     setActiveTab('track');
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail.trim()) {
-      setLoginError('Por favor, informe seu e-mail ou usuário institucional.');
+    setLoginError('');
+
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setLoginError('Por favor, preencha o e-mail e a senha de acesso.');
       return;
     }
-    setLoginError('');
-    if (onLoginSuccess) {
-      onLoginSuccess();
+
+    setIsLoggingIn(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword,
+      });
+
+      if (error || !data.user) {
+        setLoginError('Acesso Negado: E-mail ou senha incorretos. Apenas usuários autorizados no Supabase podem acessar.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Sucesso na Autenticação Supabase
+      localStorage.setItem('sigfrota_auth', 'true');
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
+    } catch {
+      setLoginError('Falha ao autenticar com o banco de dados Supabase.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -497,12 +521,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
             <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">E-mail ou Usuário Institucional</label>
+                <label className="block font-bold text-slate-700 mb-1">E-mail Institucional Cadastrado</label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="text"
+                    type="email"
                     required
+                    placeholder="usuario@unilab.edu.br"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:border-brand-500 focus:outline-hidden"
@@ -517,6 +542,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <input
                     type="password"
                     required
+                    placeholder="Sua senha do Supabase"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:border-brand-500 focus:outline-hidden"
@@ -524,32 +550,52 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 </div>
               </div>
 
+              {/* Atalho de E-mails Autorizados no Supabase */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-bold text-slate-500 block">Usuários Cadastrados no Supabase:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'admin@admin.com',
+                    'audeniralima@unilab.edu.br',
+                    'tiagosousa@unilab.edu.br',
+                    'janaina.bonfim@unilab.edu.br'
+                  ].map((email) => (
+                    <button
+                      key={email}
+                      type="button"
+                      onClick={() => setLoginEmail(email)}
+                      className={`text-[10.5px] px-2 py-1 rounded-md font-mono border transition-colors ${
+                        loginEmail === email
+                          ? 'bg-brand-100 text-brand-900 border-brand-300 font-bold'
+                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {email}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="submit"
-                className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-xs shadow-md shadow-brand-600/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-400 text-white rounded-xl font-bold text-xs shadow-md shadow-brand-600/30 transition-all active:scale-95 flex items-center justify-center gap-2"
               >
-                <Lock className="w-4 h-4" />
-                <span>Entrar no SIG-FROTA Gestão</span>
+                {isLoggingIn ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>Autenticando no Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    <span>Entrar no SIG-FROTA Gestão</span>
+                  </>
+                )}
               </button>
             </form>
 
-            <div className="relative flex py-1 items-center">
-              <div className="grow border-t border-slate-200"></div>
-              <span className="shrink mx-3 text-[10px] text-slate-400 uppercase font-bold tracking-wider">Acesso Demonstrativo</span>
-              <div className="grow border-t border-slate-200"></div>
-            </div>
-
-            {/* Quick Demo Login Button */}
-            <button
-              type="button"
-              onClick={handleLoginSubmit}
-              className="w-full py-2.5 bg-brand-50 hover:bg-brand-100 text-brand-800 border border-brand-300 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 shadow-xs"
-            >
-              <ShieldCheck className="w-4 h-4 text-brand-700" />
-              <span>Acessar Diretamente como Gestor (DIVTRANS)</span>
-            </button>
-
-            <div className="text-center">
+            <div className="text-center pt-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('track')}
