@@ -207,13 +207,13 @@ export class TripService {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(trips));
 
     // Sincronização automática com Supabase
-    supabase
-      .from('trip_requests')
-      .upsert(savedTrip)
-      .then(({ error }) => {
-        if (error) console.warn('Supabase sync trip_requests:', error.message);
+    Promise.resolve(supabase.from('trip_requests').upsert(savedTrip))
+      .then((res: any) => {
+        if (res?.error) console.warn('Supabase sync trip_requests:', res.error.message);
       })
-      .catch((err) => console.warn('Supabase sync trip_requests:', err));
+      .catch((err: any) => {
+        console.warn('Supabase sync trip_requests:', err);
+      });
 
     return savedTrip;
   }
