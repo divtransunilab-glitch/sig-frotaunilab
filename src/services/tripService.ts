@@ -470,16 +470,59 @@ export class TripService {
   }
 
   /**
+   * Sincroniza viagens em lote para o banco de dados Supabase
+   */
+  static async syncTripsToSupabase(trips: TripRequest[]): Promise<void> {
+    try {
+      if (!trips || trips.length === 0) return;
+
+      const sanitized = trips.map((t, idx) => ({
+        ...t,
+        id: t.id || `trip-imp-${Date.now()}-${idx}`,
+        process_number: t.process_number || `PROC-${Date.now()}-${idx}`,
+        activity_type: t.activity_type || 'Graduação',
+        requester_name: t.requester_name || 'Solicitante Institucional',
+        macro_unit: t.macro_unit || 'IDR',
+        requesting_unit: t.requesting_unit || 'Unidade Solicitante',
+        origin_city_id: t.origin_city_id || 'city-1',
+        destination_city_id: t.destination_city_id || 'city-3',
+        departure_datetime: t.departure_datetime || new Date().toISOString(),
+        return_datetime: t.return_datetime || new Date().toISOString(),
+        passenger_count: t.passenger_count || 1,
+        status: t.status || 'Pendente de Análise',
+        received_at: t.received_at || new Date().toISOString()
+      }));
+
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < sanitized.length; i += BATCH_SIZE) {
+        const batch = sanitized.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('trip_requests').upsert(batch);
+        if (error) {
+          console.error('Erro ao enviar lote para o Supabase:', error.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao sincronizar viagens com Supabase:', e);
+    }
+  }
+
+  /**
    * Substitui todas as viagens pelas novas viagens importadas da planilha
    */
-  static replaceTrips(newTrips: TripRequest[]): void {
+  static async replaceTrips(newTrips: TripRequest[]): Promise<void> {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(newTrips));
+    try {
+      await supabase.from('trip_requests').delete().neq('id', 'non_existent');
+      await this.syncTripsToSupabase(newTrips);
+    } catch (e) {
+      console.warn('Erro ao substituir viagens no Supabase:', e);
+    }
   }
 
   /**
    * Adiciona viagens importadas às já existentes (sem duplicar processo idêntico)
    */
-  static appendTrips(incomingTrips: TripRequest[]): void {
+  static async appendTrips(incomingTrips: TripRequest[]): Promise<void> {
     const existing = this.loadTrips();
     const existingProcessSet = new Set(existing.map((t) => t.process_number.trim().toLowerCase()));
 
@@ -489,6 +532,7 @@ export class TripService {
 
     const merged = [...uniqueNew, ...existing];
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(merged));
+    await this.syncTripsToSupabase(uniqueNew);
   }
 
   static async clearAllTrips(): Promise<void> {

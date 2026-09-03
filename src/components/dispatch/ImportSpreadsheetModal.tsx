@@ -87,17 +87,22 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
     reader.readAsArrayBuffer(f);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!importResult || importResult.allTrips.length === 0) return;
-
-    if (importMode === 'replace') {
-      TripService.replaceTrips(importResult.allTrips);
-    } else {
-      TripService.appendTrips(importResult.allTrips);
+    setIsProcessing(true);
+    try {
+      if (importMode === 'replace') {
+        await TripService.replaceTrips(importResult.allTrips);
+      } else {
+        await TripService.appendTrips(importResult.allTrips);
+      }
+      onImportSuccess(importResult.allTrips.length, importMode);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(`Erro ao salvar no banco de dados: ${err?.message || 'Falha na conexão'}`);
+    } finally {
+      setIsProcessing(false);
     }
-
-    onImportSuccess(importResult.allTrips.length, importMode);
-    onClose();
   };
 
   const handleResetModal = () => {
