@@ -94,23 +94,23 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const defaultReceivedTime = format(new Date(), 'HH:mm');
 
   // --- DADOS OBRIGATÓRIOS (Até Quantidade de Passageiros) ---
-  const [processNumber, setProcessNumber] = useState(defaultProcessNumber);
-  const [receivedDate, setReceivedDate] = useState(defaultReceivedDate);
-  const [receivedTime, setReceivedTime] = useState(defaultReceivedTime);
-  const [activityType, setActivityType] = useState<ActivityType>('Graduação');
+  const [processNumber, setProcessNumber] = useState('');
+  const [receivedDate, setReceivedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [receivedTime, setReceivedTime] = useState(format(new Date(), 'HH:mm'));
+  const [activityType, setActivityType] = useState<ActivityType | ''>('');
   const [requesterName, setRequesterName] = useState('');
   const [requesterEmail, setRequesterEmail] = useState('');
-  const [macroUnit, setMacroUnit] = useState<MacroUnit>('IDR');
+  const [macroUnit, setMacroUnit] = useState<MacroUnit | ''>('');
   const [requestingUnit, setRequestingUnit] = useState('');
-  const [originCityId, setOriginCityId] = useState(cities[0]?.id || 'city-1');
+  const [originCityId, setOriginCityId] = useState('');
   const [originAddress, setOriginAddress] = useState('');
-  const [destinationCityId, setDestinationCityId] = useState(cities[2]?.id || 'city-3');
+  const [destinationCityId, setDestinationCityId] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
-  const [departureDate, setDepartureDate] = useState(defaultDepartureDate);
-  const [departureTime, setDepartureTime] = useState(defaultDepartureTime);
-  const [returnDate, setReturnDate] = useState(defaultReturnDate);
-  const [returnTime, setReturnTime] = useState(defaultReturnTime);
-  const [passengerCount, setPassengerCount] = useState<number>(4);
+  const [departureDate, setDepartureDate] = useState('');
+  const [departureTime, setDepartureTime] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
+  const [passengerCount, setPassengerCount] = useState<number | ''>('');
 
   // --- DADOS OPCIONAIS / DESPACHO ---
   const [allocatedContractorId, setAllocatedContractorId] = useState<string>('');
@@ -124,20 +124,57 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [tripObjective, setTripObjective] = useState('');
   const [notes, setNotes] = useState('');
 
+  // Reset completo de todos os campos ao abrir o formulário
+  useEffect(() => {
+    if (isOpen) {
+      setProcessNumber('');
+      setReceivedDate(format(new Date(), 'yyyy-MM-dd'));
+      setReceivedTime(format(new Date(), 'HH:mm'));
+      setActivityType('');
+      setRequesterName('');
+      setRequesterEmail('');
+      setMacroUnit('');
+      setRequestingUnit('');
+      setOriginCityId('');
+      setOriginAddress('');
+      setDestinationCityId('');
+      setDestinationAddress('');
+      setDepartureDate('');
+      setDepartureTime('');
+      setReturnDate('');
+      setReturnTime('');
+      setPassengerCount('');
+      setAllocatedContractorId('');
+      setAllocatedDriverId('');
+      setDriverCategory('');
+      setVehicleType('');
+      setAllocatedVehicleId('');
+      setStatus('Pendente de Análise');
+      setTravelReportStatus('Não Aplicável');
+      setPassengerNames('');
+      setTripObjective('');
+      setNotes('');
+    }
+  }, [isOpen]);
+
   // Sincroniza campos combinados de datetime
-  const departureDatetime = `${departureDate}T${departureTime}`;
-  const returnDatetime = `${returnDate}T${returnTime}`;
+  const departureDatetime = departureDate && departureTime ? `${departureDate}T${departureTime}` : `${format(new Date(), 'yyyy-MM-dd')}T08:00`;
+  const returnDatetime = returnDate && returnTime ? `${returnDate}T${returnTime}` : `${format(new Date(), 'yyyy-MM-dd')}T17:00`;
   const receivedAt = `${receivedDate}T${receivedTime}`;
 
   // Cálculo de Dia da Semana da Saída
-  const departureDayOfWeek = safeFormatDate(`${departureDate}T00:00:00`, 'EEEE', '');
+  const departureDayOfWeek = departureDate ? safeFormatDate(`${departureDate}T00:00:00`, 'EEEE', '') : '---';
 
   // Cálculo instantâneo de KM
   const [estimatedKm, setEstimatedKm] = useState<number>(0);
 
   useEffect(() => {
-    const km = DistanceService.calculateTotalKm(originCityId, destinationCityId);
-    setEstimatedKm(km);
+    if (originCityId && destinationCityId) {
+      const km = DistanceService.calculateTotalKm(originCityId, destinationCityId);
+      setEstimatedKm(km);
+    } else {
+      setEstimatedKm(0);
+    }
   }, [originCityId, destinationCityId]);
 
   // Cálculo instantâneo de Prazo de Antecedência
@@ -147,7 +184,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   );
 
   // Sugestão de Veículo por capacidade
-  const recommendation = FleetService.recommendVehicleType(passengerCount);
+  const recommendation = FleetService.recommendVehicleType(typeof passengerCount === 'number' ? passengerCount : 0);
 
   // Filtragem de motoristas e veículos quando contratada é selecionada
   const availableDrivers = allDrivers.filter((d) => !allocatedContractorId || d.contractor_id === allocatedContractorId);
@@ -187,8 +224,16 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       alert('Informe a data e horário de recebimento.');
       return;
     }
+    if (!activityType) {
+      alert('Selecione o tipo de atividade.');
+      return;
+    }
     if (!requesterName.trim()) {
       alert('Informe o nome do solicitante.');
+      return;
+    }
+    if (!macroUnit) {
+      alert('Selecione a unidade macro.');
       return;
     }
     if (!requestingUnit.trim()) {
@@ -207,7 +252,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       alert('A data/horário de retorno deve ser posterior à data/horário de saída.');
       return;
     }
-    if (passengerCount < 1) {
+    const count = typeof passengerCount === 'number' ? passengerCount : parseInt(passengerCount as string);
+    if (!count || isNaN(count) || count < 1) {
       alert('A quantidade de passageiros deve ser no mínimo 1.');
       return;
     }
@@ -215,10 +261,10 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     onSaveTrip({
       process_number: processNumber.trim(),
       received_at: receivedAt,
-      activity_type: activityType,
+      activity_type: activityType as ActivityType,
       requester_name: requesterName.trim(),
       requester_email: requesterEmail.trim(),
-      macro_unit: macroUnit,
+      macro_unit: macroUnit as MacroUnit,
       requesting_unit: requestingUnit.trim(),
       origin_city_id: originCityId,
       origin_address: originAddress.trim() || undefined,
@@ -226,7 +272,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       destination_address: destinationAddress.trim() || undefined,
       departure_datetime: departureDatetime,
       return_datetime: returnDatetime,
-      passenger_count: passengerCount,
+      passenger_count: count,
       estimated_km: estimatedKm,
       
       // Opcionais
@@ -373,6 +419,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   onChange={(e) => setActivityType(e.target.value as ActivityType)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-800 focus:border-brand-500 focus:outline-hidden"
                 >
+                  <option value="">Selecione o Tipo de Atividade...</option>
                   {ACTIVITY_TYPES.map((act) => (
                     <option key={act} value={act}>
                       {act}
@@ -420,6 +467,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   onChange={(e) => setMacroUnit(e.target.value as MacroUnit)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-bold text-slate-800 focus:border-brand-500 focus:outline-hidden"
                 >
+                  <option value="">Selecione a Unidade Macro...</option>
                   {MACRO_UNITS.map((unit) => (
                     <option key={unit} value={unit}>
                       {unit}
@@ -464,6 +512,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                       onChange={(e) => setOriginCityId(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-bold text-slate-800 focus:bg-white focus:border-brand-500 focus:outline-hidden"
                     >
+                      <option value="">Selecione o Município de Partida...</option>
                       {cities.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name} - {c.state}
@@ -504,6 +553,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                       onChange={(e) => setDestinationCityId(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-bold text-slate-800 focus:bg-white focus:border-brand-500 focus:outline-hidden"
                     >
+                      <option value="">Selecione o Município de Destino...</option>
                       {cities.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name} - {c.state}
@@ -593,8 +643,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   required
                   min={1}
                   max={60}
+                  placeholder="Ex: 4"
                   value={passengerCount}
-                  onChange={(e) => setPassengerCount(parseInt(e.target.value) || 1)}
+                  onChange={(e) => setPassengerCount(e.target.value === '' ? '' : parseInt(e.target.value))}
                   className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-bold text-slate-900 focus:border-brand-500 focus:outline-hidden"
                 />
                 <span className="text-[10px] text-brand-800 font-semibold block mt-1">
