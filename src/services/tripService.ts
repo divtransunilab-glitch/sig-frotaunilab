@@ -35,8 +35,8 @@ export class TripService {
         console.error('Erro ao ler viagens do storage', e);
       }
     }
-    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(INITIAL_TRIPS));
-    return INITIAL_TRIPS;
+    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify([]));
+    return [];
   }
 
   static getTrips(filters?: FilterOptions): TripRequest[] {
@@ -228,7 +228,7 @@ export class TripService {
         .select('*')
         .order('departure_datetime', { ascending: true });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(data));
         return data as TripRequest[];
       }
@@ -491,7 +491,16 @@ export class TripService {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(merged));
   }
 
+  static async clearAllTrips(): Promise<void> {
+    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify([]));
+    try {
+      await supabase.from('trip_requests').delete().neq('id', 'non_existent');
+    } catch (e) {
+      console.warn('Erro ao limpar trip_requests no Supabase:', e);
+    }
+  }
+
   static resetToDefaults(): void {
-    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(INITIAL_TRIPS));
+    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify([]));
   }
 }

@@ -54,19 +54,17 @@ export function App() {
   };
 
   const loadTrips = async () => {
-    // Carregamento instantâneo do cache local
-    const list = TripService.getTrips();
-    setTrips([...list]);
-
-    // Sincronização em tempo real com o banco de dados Supabase
     try {
       const freshData = await TripService.fetchFromSupabase();
-      if (freshData && freshData.length > 0) {
+      if (freshData) {
         setTrips([...freshData]);
+        return;
       }
     } catch {
       // fallback local
     }
+    const list = TripService.getTrips();
+    setTrips([...list]);
   };
 
   useEffect(() => {
@@ -86,11 +84,11 @@ export function App() {
     showToast('Sessão encerrada. Você retornou ao Portal do Solicitante.', 'info');
   };
 
-  const handleResetData = () => {
-    if (confirm('Deseja restaurar todos os dados de demonstração da UNILAB?')) {
-      TripService.resetToDefaults();
-      loadTrips();
-      showToast('Dados restaurados com sucesso!', 'info');
+  const handleResetData = async () => {
+    if (confirm('Deseja zerar a base de solicitações para carregar a planilha oficial?')) {
+      await TripService.clearAllTrips();
+      setTrips([]);
+      showToast('Base de solicitações zerada com sucesso!', 'info');
     }
   };
 
