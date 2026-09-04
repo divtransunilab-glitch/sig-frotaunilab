@@ -46,6 +46,13 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedEntity, setSelectedEntity] = useState<string>('ALL');
   const [selectedLogDetail, setSelectedLogDetail] = useState<AuditLog | null>(null);
+  const [rawLogs, setRawLogs] = useState<AuditLog[]>(() => AuditService.getLogs());
+
+  React.useEffect(() => {
+    AuditService.fetchLogsFromSupabase().then((data) => {
+      if (data) setRawLogs([...data]);
+    });
+  }, []);
 
   // Carrega e filtra os logs de auditoria
   const auditLogs = useMemo(() => {
@@ -55,7 +62,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
       entity_type: selectedEntity,
       searchTerm: searchTerm,
     });
-  }, [selectedAction, selectedStatus, selectedEntity, searchTerm]);
+  }, [selectedAction, selectedStatus, selectedEntity, searchTerm, rawLogs]);
 
   // Indicadores de conformidade institucional
   const compliance = useMemo(() => {
@@ -80,6 +87,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
         return 'bg-purple-100 text-purple-800 border-purple-300';
       case 'Criação de Solicitação':
         return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'Autenticação no Sistema':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      case 'Alteração de Senha':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-300';
+      case 'Reset de Base de Dados':
+        return 'bg-rose-100 text-rose-800 border-rose-300';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }

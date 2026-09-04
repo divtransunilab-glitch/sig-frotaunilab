@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { AuditService } from '../../services/auditService';
 import { KeyRound, Lock, Eye, EyeOff, AlertCircle, X, ShieldCheck } from 'lucide-react';
 
 interface ChangePasswordModalProps {
@@ -50,6 +51,14 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setIsLoading(false);
         return;
       }
+
+      AuditService.logEvent({
+        action: 'Alteração de Senha',
+        entity_type: 'Sistema',
+        compliance_status: 'Conforme',
+        user_name: userName || 'Usuário Gestor',
+        details: 'Usuário realizou a alteração da senha de acesso ao sistema com sucesso.',
+      });
 
       onSuccess('Sua senha de acesso foi alterada com sucesso no Supabase!');
       onClose();

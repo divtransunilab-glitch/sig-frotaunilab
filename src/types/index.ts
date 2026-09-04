@@ -197,7 +197,10 @@ export type AuditAction =
   | 'Parametrização Financeira'
   | 'Cadastro de Frota'
   | 'Cadastro de Unidade'
-  | 'Agrupamento de Viagem (Carona Solidária)';
+  | 'Agrupamento de Viagem (Carona Solidária)'
+  | 'Autenticação no Sistema'
+  | 'Alteração de Senha'
+  | 'Reset de Base de Dados';
 
 export interface AuditLog {
   id: string;

@@ -1,12 +1,12 @@
 import { AuditLog, AuditAction, AuditFilterOptions, TripRequest } from '../types';
 import { INITIAL_AUDIT_LOGS } from '../data/initialData';
-import { parseISO, isWithinInterval, isValid } from 'date-fns';
+import { supabase } from './supabaseClient';
 
 const STORAGE_KEY_AUDIT = 'sigfrota_audit_logs';
 
 export class AuditService {
   /**
-   * Obtém todos os logs de auditoria armazenados ou inicializa com os dados iniciais
+   * Obtém todos os logs de auditoria armazenados ou inicializa
    */
   static getLogs(filter?: AuditFilterOptions): AuditLog[] {
     let logs: AuditLog[] = [];
@@ -55,7 +55,27 @@ export class AuditService {
   }
 
   /**
-   * Registra um novo evento no log de auditoria
+   * Busca logs de auditoria salvos no Supabase e atualiza o cache local
+   */
+  static async fetchLogsFromSupabase(): Promise<AuditLog[]> {
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (!error && data) {
+        localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(data));
+        return data as AuditLog[];
+      }
+    } catch (e) {
+      console.warn('Falha ao sincronizar logs de auditoria com Supabase:', e);
+    }
+    return this.getLogs();
+  }
+
+  /**
+   * Registra um novo evento no log de auditoria e envia para o Supabase
    */
   static logEvent(
     entry: Partial<AuditLog> & {
@@ -64,11 +84,24 @@ export class AuditService {
       details: string;
     }
   ): AuditLog {
+    let currentUserName = 'Gestor DIVTRANS';
+    try {
+      const savedUserStr = localStorage.getItem('sigfrota_user');
+      if (savedUserStr) {
+        const u = JSON.parse(savedUserStr);
+        if (u.name || u.email) {
+          currentUserName = u.name || u.email;
+        }
+      }
+    } catch {
+      // fallback
+    }
+
     const logs = this.getLogs();
     const newLog: AuditLog = {
       id: entry.id || `audit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: entry.timestamp || new Date().toISOString(),
-      user_name: entry.user_name || 'Gestor DIVTRANS',
+      user_name: entry.user_name || currentUserName,
       user_role: entry.user_role || 'Administrador de Transportes',
       action: entry.action,
       target_id: entry.target_id,
@@ -82,6 +115,17 @@ export class AuditService {
 
     logs.unshift(newLog);
     localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
+
+    // Persistir em segundo plano no Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('audit_logs').insert([newLog]);
+        if (error) console.error('Erro ao salvar log de auditoria no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar audit log ao Supabase:', err);
+      }
+    })();
+
     return newLog;
   }
 

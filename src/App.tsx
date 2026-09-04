@@ -77,6 +77,12 @@ export function App() {
     localStorage.setItem('sigfrota_auth', 'true');
     setIsAuthenticated(true);
     setActiveTab('dashboard');
+    AuditService.logEvent({
+      action: 'Autenticação no Sistema',
+      entity_type: 'Sistema',
+      compliance_status: 'Conforme',
+      details: 'Sessão iniciada no painel SIG-FROTA Gestão Operacional.',
+    });
     showToast('Acesso autorizado! Bem-vindo ao SIG-FROTA Gestão.', 'success');
   };
 
@@ -91,12 +97,24 @@ export function App() {
     if (confirm('Deseja zerar a base de solicitações para carregar a planilha oficial?')) {
       await TripService.clearAllTrips();
       setTrips([]);
+      AuditService.logEvent({
+        action: 'Reset de Base de Dados',
+        entity_type: 'Sistema',
+        compliance_status: 'Alerta',
+        details: 'Base de solicitações de viagem foi resetada pelo operador.',
+      });
       showToast('Base de solicitações zerada com sucesso!', 'info');
     }
   };
 
   const handleImportSuccess = (count: number, mode: 'replace' | 'append') => {
     loadTrips();
+    AuditService.logEvent({
+      action: 'Importação em Lote',
+      entity_type: 'Viagem',
+      compliance_status: 'Conforme',
+      details: `Importação em lote realizada: ${count} solicitações de viagem (${mode === 'replace' ? 'Substituição da base' : 'Adição de registros'}).`,
+    });
     showToast(
       mode === 'replace'
         ? `Base de dados atualizada com ${count} solicitações reais de 2026!`
