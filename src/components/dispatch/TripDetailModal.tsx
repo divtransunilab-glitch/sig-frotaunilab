@@ -126,7 +126,7 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
 - Quantidade de Passageiros: ${trip.passenger_count}
 - Rota/Itinerário: > ${rotaItinerario}
 
-** Conforme art. 27 da Portaria PROADI nº 194, de 29 de janeiro de 2024, para todas as viagens em veículos da Universidade nas quais a distância do endereço de origem ao endereço de destino seja igual ou superior a 80 (oitenta) quilômetros rodoviários, partindo do Campus da Liberdade (no Ceará), e que envolvam o transporte coletivo de alunos, é obrigatório indicar o nome de um servidor para exercer o papel de responsável pelos passageiros durante o deslocamento.
+** Conforme Art. 20 inciso XI da Portaria PROADI nº 333 de 15 de setembro de 2025 é vedado transporte coletivo de alunos em que a distância do endereço de origem ao endereço de destino seja igual ou superior a 80 (oitenta) quilômetros rodoviários, sem a indicação de servidor responsável pelos passageiros.
 § 1º O responsável deverá estar presente durante toda a viagem.
 § 2º É facultada a presença de servidor responsável em deslocamentos inferiores a 80 (oitenta) quilômetros rodoviários, porém a ausência do mesmo não exime, do solicitante, a responsabilização de fatos que venham a ocorrer no trajeto da viagem.
 § 3º Nos casos de viagens não abrangidas pelo caput, em que a lista definitiva de passageiros possua mais de 25 (vinte e cinco) pessoas, será obrigatória a indicação de colaborador da unidade requisitante para realizar o acompanhamento do deslocamento.
@@ -338,7 +338,7 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
             )}
           </div>
 
-          {/* SEÇÃO OFICIAL: TERMO DE DEFERIMENTO & INSTRUÇÕES NORMATIVAS (PORTARIA PROADI Nº 194/2024) - EXIBIDO APENAS SE A DEMANDA JÁ ESTIVER ESCALADA */}
+          {/* SEÇÃO OFICIAL: TERMO DE DEFERIMENTO & INSTRUÇÕES NORMATIVAS (PORTARIA PROADI Nº 333/2025) - EXIBIDO APENAS SE A DEMANDA JÁ ESTIVER ESCALADA */}
           {(trip.status === 'Confirmado ao Demandante' || Boolean(trip.allocated_driver_id && trip.allocated_vehicle_id)) && (
             <div className="bg-gradient-to-b from-slate-50 to-white p-5 rounded-2xl border-2 border-brand-200/90 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -350,7 +350,7 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
                     <h4 className="font-extrabold text-xs text-navy-950 uppercase tracking-wide">
                       Comunicado Oficial de Aprovação & Termo de Escalação
                     </h4>
-                    <span className="text-[10px] text-slate-500">Portaria PROADI nº 194, de 29 de janeiro de 2024</span>
+                    <span className="text-[10px] text-slate-500">Portaria PROADI nº 333, de 15 de setembro de 2025</span>
                   </div>
                 </div>
 
@@ -395,7 +395,7 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
 
                 <div className="space-y-2 pt-2 border-t border-slate-100 text-[11px] text-slate-600">
                   <p>
-                    <strong>** Conforme art. 27 da Portaria PROADI nº 194, de 29 de janeiro de 2024</strong>, para todas as viagens em veículos da Universidade nas quais a distância do endereço de origem ao endereço de destino seja igual ou superior a 80 (oitenta) quilômetros rodoviários, partindo do Campus da Liberdade (no Ceará), e que envolvam o transporte coletivo de alunos, é obrigatório indicar o nome de um servidor para exercer o papel de responsável pelos passageiros durante o deslocamento.
+                    <strong>** Conforme Art. 20 inciso XI da Portaria PROADI nº 333 de 15 de setembro de 2025</strong> é vedado transporte coletivo de alunos em que a distância do endereço de origem ao endereço de destino seja igual ou superior a 80 (oitenta) quilômetros rodoviários, sem a indicação de servidor responsável pelos passageiros.
                   </p>
                   <div className="pl-3 border-l-2 border-slate-300 space-y-1 text-slate-600 italic">
                     <p><strong>§ 1º</strong> O responsável deverá estar presente durante toda a viagem.</p>
