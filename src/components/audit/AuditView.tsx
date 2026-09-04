@@ -25,7 +25,8 @@ import {
   ExternalLink,
   Shield,
   Layers,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 
 interface AuditViewProps {
@@ -71,6 +72,13 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
   const handleExportCSV = () => {
     AuditService.exportAuditCSV(auditLogs);
+  };
+
+  const handleClearAuditLogs = async () => {
+    if (confirm('Deseja zerar e limpar todo o histórico de logs de auditoria do sistema?')) {
+      await AuditService.clearAllLogs();
+      setRawLogs([]);
+    }
   };
 
   const getActionBadge = (action: AuditAction) => {
@@ -325,16 +333,25 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
       {/* TABELA DE REGISTROS DE AUDITORIA */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden space-y-0">
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-indigo-600" />
             <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
               Trilha de Eventos & Logs de Auditoria ({auditLogs.length})
             </h3>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">
-            Registros ordenados cronologicamente do mais recente ao mais antigo
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-500 font-medium hidden md:inline">
+              Registros ordenados cronologicamente do mais recente ao mais antigo
+            </span>
+            <button
+              onClick={handleClearAuditLogs}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Limpar Logs</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

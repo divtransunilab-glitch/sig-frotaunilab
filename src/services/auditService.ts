@@ -6,7 +6,7 @@ const STORAGE_KEY_AUDIT = 'sigfrota_audit_logs';
 
 export class AuditService {
   /**
-   * Obtém todos os logs de auditoria armazenados ou inicializa
+   * Obtém todos os logs de auditoria armazenados ou inicializa (expurgando fictícios)
    */
   static getLogs(filter?: AuditFilterOptions): AuditLog[] {
     let logs: AuditLog[] = [];
@@ -14,13 +14,19 @@ export class AuditService {
     
     if (saved) {
       try {
-        logs = JSON.parse(saved);
+        const parsed: AuditLog[] = JSON.parse(saved);
+        // Expurgar logs legados estáticos fictícios se ainda existirem no localStorage do navegador do usuário
+        logs = parsed.filter((l) => !['audit-001', 'audit-002', 'audit-003', 'audit-004', 'audit-005'].includes(l.id));
+        if (logs.length !== parsed.length) {
+          localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
+        }
       } catch (e) {
         console.error('Erro ao ler logs de auditoria do storage', e);
-        logs = INITIAL_AUDIT_LOGS;
+        logs = [];
+        localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
       }
     } else {
-      logs = INITIAL_AUDIT_LOGS;
+      logs = [];
       localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(logs));
     }
 
@@ -65,8 +71,11 @@ export class AuditService {
         .order('timestamp', { ascending: false });
 
       if (!error && data) {
-        localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(data));
-        return data as AuditLog[];
+        const cleanData = (data as AuditLog[]).filter(
+          (l) => !['audit-001', 'audit-002', 'audit-003', 'audit-004', 'audit-005'].includes(l.id)
+        );
+        localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(cleanData));
+        return cleanData;
       }
     } catch (e) {
       console.warn('Falha ao sincronizar logs de auditoria com Supabase:', e);
@@ -213,7 +222,16 @@ export class AuditService {
     document.body.removeChild(link);
   }
 
+  static async clearAllLogs(): Promise<void> {
+    localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify([]));
+    try {
+      await supabase.from('audit_logs').delete().neq('id', 'keep_nothing');
+    } catch (e) {
+      console.warn('Erro ao limpar audit_logs no Supabase:', e);
+    }
+  }
+
   static resetToDefaults(): void {
-    localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify(INITIAL_AUDIT_LOGS));
+    localStorage.setItem(STORAGE_KEY_AUDIT, JSON.stringify([]));
   }
 }
