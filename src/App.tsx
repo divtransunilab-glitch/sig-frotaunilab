@@ -291,7 +291,7 @@ export function App() {
       />
 
       {/* Main App Workspace */}
-      <div className="flex-1 flex w-full max-w-[1600px] mx-auto min-w-0 overflow-x-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row w-full max-w-[1600px] mx-auto min-w-0 overflow-x-hidden">
         
         {/* Sidebar */}
         <Sidebar
