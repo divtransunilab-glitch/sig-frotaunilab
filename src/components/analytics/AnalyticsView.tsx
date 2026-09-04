@@ -23,9 +23,12 @@ import {
   Info,
   Sliders,
   AlertTriangle,
-  Search,
   CheckCircle,
-  AlertCircle
+  Brain,
+  Lightbulb,
+  TrendingDown,
+  TrendingUp,
+  Zap
 } from 'lucide-react';
 import { parseISO, getMonth, getYear, getDay, isValid } from 'date-fns';
 import { safeFormatDate } from '../../utils/dateUtils';
@@ -51,7 +54,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL'); // 'ALL' or '0'..'11'
   const [selectedMacro, setSelectedMacro] = useState<string>('ALL');
-  const [sectorSearchTerm, setSectorSearchTerm] = useState<string>('');
 
   // Parâmetros Financeiros Globais (Combustíveis e Manutenção por KM)
   const [fuelPrices, setFuelPrices] = useState<FuelPrices>(() => CostService.getFuelPrices());
@@ -133,9 +135,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     // Agrupamento por Unidade Macro
     const macroMap: Record<string, { total: number; inside: number; outside: number }> = {};
     
-    // Agrupamento por Setor / Unidade Solicitante
-    const unitMap: Record<string, { requestingUnit: string; macroUnit: string; total: number; inside: number; outside: number }> = {};
-
     scopedTrips.forEach((t) => {
       const macro = t.macro_unit || 'Outros';
       if (!macroMap[macro]) {
@@ -147,17 +146,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       } else {
         macroMap[macro].outside += 1;
       }
-
-      const reqUnit = (t.requesting_unit || t.macro_unit || 'Não Informado').trim();
-      if (!unitMap[reqUnit]) {
-        unitMap[reqUnit] = { requestingUnit: reqUnit, macroUnit: macro, total: 0, inside: 0, outside: 0 };
-      }
-      unitMap[reqUnit].total += 1;
-      if (t.status_deadline === 'Dentro do Prazo') {
-        unitMap[reqUnit].inside += 1;
-      } else {
-        unitMap[reqUnit].outside += 1;
-      }
     });
 
     const macroDeadlineList = Object.entries(macroMap)
@@ -168,14 +156,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       })
       .sort((a, b) => b.total - a.total);
 
-    const unitDeadlineList = Object.values(unitMap)
-      .map((data) => {
-        const pctInside = data.total > 0 ? Math.round((data.inside / data.total) * 100) : 0;
-        const pctOutside = data.total > 0 ? Math.round((data.outside / data.total) * 100) : 0;
-        return { ...data, pctInside, pctOutside };
-      })
-      .sort((a, b) => b.total - a.total);
-
     return {
       total,
       inside,
@@ -183,18 +163,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       insidePct,
       outsidePct,
       macroDeadlineList,
-      unitDeadlineList,
     };
   }, [scopedTrips]);
-
-  // Setores Filtrados pelo Termo de Busca
-  const filteredUnitDeadlineList = useMemo(() => {
-    if (!sectorSearchTerm.trim()) return deadlineStats.unitDeadlineList;
-    const term = sectorSearchTerm.toLowerCase();
-    return deadlineStats.unitDeadlineList.filter(
-      (u) => u.requestingUnit.toLowerCase().includes(term) || u.macroUnit.toLowerCase().includes(term)
-    );
-  }, [deadlineStats.unitDeadlineList, sectorSearchTerm]);
 
   // Cálculos de Custos Detalhados de Todas as Viagens no Escopo
   const tripsCostData = useMemo(() => {
@@ -448,6 +418,56 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     };
   }, [scopedTrips]);
 
+  // ANÁLISE INTELIGENTE DE IA SOBRE OS MELHORES E PIORES HORÁRIOS NO HEATMAP
+  const aiHeatmapInsights = useMemo(() => {
+    const slotsWithData: { dayName: string; dayIdx: number; slotLabel: string; slotIdx: number; count: number }[] = [];
+
+    dayLabels.forEach((dName, dIdx) => {
+      timeSlotLabels.forEach((sLabel, sIdx) => {
+        slotsWithData.push({
+          dayName: dName,
+          dayIdx: dIdx,
+          slotLabel: sLabel,
+          slotIdx: sIdx,
+          count: slotMatrix[dIdx][sIdx],
+        });
+      });
+    });
+
+    // Ordenar por volume de solicitações (decrescente)
+    const sorted = [...slotsWithData].sort((a, b) => b.count - a.count);
+
+    // Piores Horários / Picos Críticos de Sobrecarga (Top 3 maiores demandas)
+    const worstSlots = sorted.filter((s) => s.count > 0).slice(0, 3);
+
+    // Melhores Horários / Janelas de Maior Disponibilidade da Frota:
+    // Filtramos dias úteis (Segunda a Sexta: dIdx 1..5) e horário comercial útil (06h às 18h: slotIdx 0..5)
+    const weekdayCommercialSlots = sorted.filter(
+      (s) => s.dayIdx >= 1 && s.dayIdx <= 5 && s.slotIdx >= 0 && s.slotIdx <= 5
+    );
+
+    // Ordena do menor volume para o maior entre as faixas comerciais ativas
+    const bestSlots = [...weekdayCommercialSlots]
+      .sort((a, b) => a.count - b.count)
+      .slice(0, 3);
+
+    // Gerar recomendação dinâmica da IA
+    let recommendation = '';
+    if (worstSlots.length > 0 && bestSlots.length > 0) {
+      const topWorst = worstSlots[0];
+      const topBest = bestSlots[0];
+      recommendation = `Para otimizar o fluxo operacional e evitar sobrecarga de veículos e motoristas, a IA da UNILAB recomenda priorizar agendamentos nos horários de menor demanda comercial, como ${topBest.dayName} (${topBest.slotLabel}), e evitar novas viagens concentradas em ${topWorst.dayName} (${topWorst.slotLabel}).`;
+    } else {
+      recommendation = 'O fluxo de agendamentos está distribuído de forma equilibrada sem gargalos operacionais.';
+    }
+
+    return {
+      worstSlots,
+      bestSlots,
+      recommendation,
+    };
+  }, [slotMatrix, scopedTrips.length]);
+
   // Distribuição por Tipo de Atividade (Organizada da maior quantidade para a menor)
   const activityDistribution = useMemo(() => {
     const map: Record<string, number> = {};
@@ -503,7 +523,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Análise de solicitações, cumprimento de prazos por setor, custos de combustível e parametrização.
+              Análise de solicitações, inteligência de prazos, custos de combustível e parametrização.
             </p>
           </div>
         </div>
@@ -623,7 +643,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* ABA 1: ANÁLISE DE SOLICITAÇÕES (DEMANDAS & PRAZOS DE ANTECEDÊNCIA)        */}
+      {/* ABA 1: ANÁLISE DE SOLICITAÇÕES (DEMANDAS, HEATMAP COM IA & PRAZOS)        */}
       {/* ========================================================================= */}
       {activeTab === 'requests' && (
         <div className="space-y-6">
@@ -706,180 +726,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           </div>
 
           {/* ========================================================================= */}
-          {/* SEÇÃO PRINCIPAL: ANÁLISE DE CUMPRIMENTO DE PRAZOS POR SETOR E UNIDADE MACRO */}
+          {/* 1º BLOCO: HEATMAP ROBUSTO (DIA DA SEMANA × HORÁRIO) COM ANÁLISE DE IA DA FROTA */}
           {/* ========================================================================= */}
-          
-          {/* 1. VISUALIZAÇÃO EM BARRAS COMPARATIVAS POR UNIDADE MACRO */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-brand-600" />
-                <div>
-                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                    Aderência ao Prazo por Unidade Macro (ICS, IDR, PROADI, etc.)
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Comparativo gráfico de demandas dentro (≥ 5 dias) e fora do prazo (&lt; 5 dias).
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-bold shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-xs bg-emerald-500"></span>
-                  <span className="text-slate-700">Dentro do Prazo</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-xs bg-rose-500"></span>
-                  <span className="text-slate-700">Fora do Prazo</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-              {deadlineStats.macroDeadlineList.map((item) => (
-                <div key={item.macro} className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-slate-900 text-sm">{item.macro}</span>
-                      <span className="text-[10.5px] font-bold bg-white text-slate-600 px-2 py-0.5 rounded border border-slate-200">
-                        {item.total} solicitações
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] font-extrabold">
-                      <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
-                        {item.inside} ({item.pctInside}%)
-                      </span>
-                      <span className="text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded">
-                        {item.outside} ({item.pctOutside}%)
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Barra Progressiva Empilhada (Stacked Bar) */}
-                  <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden flex shadow-2xs">
-                    <div
-                      className="bg-emerald-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
-                      style={{ width: `${item.pctInside}%` }}
-                      title={`Dentro do Prazo: ${item.inside} (${item.pctInside}%)`}
-                    ></div>
-                    <div
-                      className="bg-rose-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
-                      style={{ width: `${item.pctOutside}%` }}
-                      title={`Fora do Prazo: ${item.outside} (${item.pctOutside}%)`}
-                    ></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 2. TABELA DETALHADA POR SETOR / UNIDADE SOLICITANTE */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                  Detalhamento por Setor Solicitante (`requesting_unit`)
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Relatório completo de cumprimento dos prazos regulamentares de antecedência por cada setor da UNILAB.
-                </p>
-              </div>
-
-              {/* Campo de Busca de Setor */}
-              <div className="relative min-w-[240px]">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar setor ou unidade..."
-                  value={sectorSearchTerm}
-                  onChange={(e) => setSectorSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-hidden focus:border-brand-500 focus:bg-white transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 text-[10.5px] uppercase tracking-wider">
-                    <th className="py-2.5 px-3 pl-4">Setor / Unidade Solicitante</th>
-                    <th className="py-2.5 px-2">Unidade Macro</th>
-                    <th className="py-2.5 px-2 text-center">Total Solicitações</th>
-                    <th className="py-2.5 px-2 text-center text-emerald-800">Dentro do Prazo (≥ 5d)</th>
-                    <th className="py-2.5 px-2 text-center text-rose-800">Fora do Prazo (&lt; 5d)</th>
-                    <th className="py-2.5 px-3 pr-4 text-right">Aderência ao Regulamento</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-[11px]">
-                  {filteredUnitDeadlineList.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-6 text-slate-400 italic">
-                        Nenhum setor encontrado para a busca especificada.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredUnitDeadlineList.map((unit) => {
-                      let badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
-                      let badgeText = 'Excelente (≥ 90%)';
-                      if (unit.pctInside < 75) {
-                        badgeColor = 'bg-rose-100 text-rose-800 border-rose-300';
-                        badgeText = 'Atenção (&lt; 75%)';
-                      } else if (unit.pctInside < 90) {
-                        badgeColor = 'bg-amber-100 text-amber-800 border-amber-300';
-                        badgeText = 'Regular (75-89%)';
-                      }
-
-                      return (
-                        <tr key={unit.requestingUnit} className="hover:bg-slate-50/80 transition-colors">
-                          
-                          {/* Nome do Setor */}
-                          <td className="py-3 px-3 pl-4 font-bold text-navy-950">
-                            {unit.requestingUnit}
-                          </td>
-
-                          {/* Unidade Macro */}
-                          <td className="py-3 px-2">
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {unit.macroUnit}
-                            </span>
-                          </td>
-
-                          {/* Total Solicitações */}
-                          <td className="py-3 px-2 text-center font-extrabold text-slate-800">
-                            {unit.total}
-                          </td>
-
-                          {/* Dentro do Prazo */}
-                          <td className="py-3 px-2 text-center font-bold text-emerald-700 bg-emerald-50/40">
-                            {unit.inside} <span className="text-[10px] font-normal text-emerald-600">({unit.pctInside}%)</span>
-                          </td>
-
-                          {/* Fora do Prazo */}
-                          <td className="py-3 px-2 text-center font-bold text-rose-700 bg-rose-50/40">
-                            {unit.outside} <span className="text-[10px] font-normal text-rose-600">({unit.pctOutside}%)</span>
-                          </td>
-
-                          {/* Aderência Badge */}
-                          <td className="py-3 px-3 pr-4 text-right">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
-                              {unit.pctInside >= 90 && <CheckCircle2 className="w-3 h-3" />}
-                              {unit.pctInside < 90 && unit.pctInside >= 75 && <AlertCircle className="w-3 h-3" />}
-                              {unit.pctInside < 75 && <AlertTriangle className="w-3 h-3" />}
-                              <span>{badgeText}</span>
-                            </span>
-                          </td>
-
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* HEATMAP ROBUSTO: DIA DA SEMANA × FAIXA HORÁRIA / HORAS */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <Flame className="w-5 h-5 text-rose-500" />
@@ -898,7 +747,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 text-xs">
                   <button
                     onClick={() => setHeatmapMode('slots')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                       heatmapMode === 'slots' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -906,7 +755,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </button>
                   <button
                     onClick={() => setHeatmapMode('hours')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                       heatmapMode === 'hours' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -914,7 +763,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </button>
                   <button
                     onClick={() => setHeatmapMode('shifts')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                       heatmapMode === 'shifts' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -980,7 +829,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                                       });
                                     }
                                   }}
-                                  className={`w-full py-2 px-1 rounded-xl border text-center transition-all ${getHeatmapColor(val)}`}
+                                  className={`w-full py-2 px-1 rounded-xl border text-center transition-all cursor-pointer ${getHeatmapColor(val)}`}
                                   title={val > 0 ? `${val} viagens. Clique para ver detalhes.` : 'Sem viagens'}
                                 >
                                   <span className="block font-bold">{val}</span>
@@ -1109,6 +958,169 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   );
                 })}
               </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* RODAPÉ DO HEATMAP: PAINEL DE ANÁLISE INTELIGENTE DE IA DA FROTA           */}
+            {/* ========================================================================= */}
+            <div className="bg-gradient-to-br from-navy-950 via-slate-900 to-indigo-950 rounded-2xl p-5 text-white space-y-4 shadow-xl border border-indigo-500/30">
+              
+              {/* Header do Bot de IA */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/20 border border-brand-400/40 flex items-center justify-center text-brand-300 shadow-inner">
+                    <Brain className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-extrabold text-sm sm:text-base text-white">
+                        Análise Inteligente da Frota (IA Generativa & Preditiva)
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-500/30 text-brand-300 border border-brand-400/30 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        Diagnóstico em Tempo Real
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-slate-300">
+                      Avaliação inteligente dos melhores e piores horários para atendimento de solicitações da UNILAB.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid 2 Colunas: Melhores Horários (Verde) vs Piores Horários (Vermelho/Rose) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                
+                {/* 1. MELHORES DIAS E HORÁRIOS PARA ATENDER SOLICITAÇÕES */}
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-emerald-400/30 space-y-2.5">
+                  <div className="flex items-center gap-2 text-emerald-300 font-extrabold">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span>🟢 Melhores Horários (Alta Liquidez & Maior Disponibilidade)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Janelas de horário comercial com menor concorrência de veículos, ideais para agendar novas viagens sem gargalos:
+                  </p>
+                  <div className="space-y-1.5 pt-1">
+                    {aiHeatmapInsights.bestSlots.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-black/30 px-3 py-1.5 rounded-lg border border-emerald-500/20 text-[11px]">
+                        <span className="font-bold text-emerald-200">
+                          {item.dayName} • {item.slotLabel}
+                        </span>
+                        <span className="font-extrabold text-white bg-emerald-500/30 px-2 py-0.5 rounded border border-emerald-400/30">
+                          {item.count} {item.count === 1 ? 'viagem' : 'viagens'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. PIORES DIAS E HORÁRIOS / GARGALOS DE PICO */}
+                <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-rose-400/30 space-y-2.5">
+                  <div className="flex items-center gap-2 text-rose-300 font-extrabold">
+                    <TrendingDown className="w-4 h-4 text-rose-400" />
+                    <span>🔴 Horários Críticos (Picos de Sobrecarga & Risco de Conflitos)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Faixas horárias de alta concentração de saídas que sobrecarregam motoristas e a frota disponível:
+                  </p>
+                  <div className="space-y-1.5 pt-1">
+                    {aiHeatmapInsights.worstSlots.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-black/30 px-3 py-1.5 rounded-lg border border-rose-500/20 text-[11px]">
+                        <span className="font-bold text-rose-200">
+                          {item.dayName} • {item.slotLabel}
+                        </span>
+                        <span className="font-extrabold text-white bg-rose-500/30 px-2 py-0.5 rounded border border-rose-400/30">
+                          {item.count} {item.count === 1 ? 'viagem' : 'viagens'} (Pico)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* RECOMENDAÇÕES ESTRATÉGICAS DA IA DA UNILAB */}
+              <div className="bg-black/40 rounded-xl p-3.5 border border-amber-400/30 flex items-start gap-3 text-xs">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <Lightbulb className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <span className="font-extrabold text-amber-300 text-[11.5px] uppercase tracking-wider block">
+                    Recomendação Estratégica da IA da UNILAB
+                  </span>
+                  <p className="text-slate-200 text-[11.5px] leading-relaxed">
+                    {aiHeatmapInsights.recommendation}
+                  </p>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* ========================================================================= */}
+          {/* 2º BLOCO: VISUALIZAÇÃO DE ADERÊNCIA AO PRAZO POR UNIDADE MACRO            */}
+          {/* ========================================================================= */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-brand-600" />
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                    Aderência ao Prazo por Unidade Macro (ICS, IDR, PROADI, etc.)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Comparativo gráfico de demandas dentro (≥ 5 dias) e fora do prazo (&lt; 5 dias).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-bold shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-emerald-500"></span>
+                  <span className="text-slate-700">Dentro do Prazo</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-rose-500"></span>
+                  <span className="text-slate-700">Fora do Prazo</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {deadlineStats.macroDeadlineList.map((item) => (
+                <div key={item.macro} className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-slate-900 text-sm">{item.macro}</span>
+                      <span className="text-[10.5px] font-bold bg-white text-slate-600 px-2 py-0.5 rounded border border-slate-200">
+                        {item.total} solicitações
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-extrabold">
+                      <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                        {item.inside} ({item.pctInside}%)
+                      </span>
+                      <span className="text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded">
+                        {item.outside} ({item.pctOutside}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Barra Progressiva Empilhada (Stacked Bar) */}
+                  <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden flex shadow-2xs">
+                    <div
+                      className="bg-emerald-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
+                      style={{ width: `${item.pctInside}%` }}
+                      title={`Dentro do Prazo: ${item.inside} (${item.pctInside}%)`}
+                    ></div>
+                    <div
+                      className="bg-rose-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
+                      style={{ width: `${item.pctOutside}%` }}
+                      title={`Fora do Prazo: ${item.outside} (${item.pctOutside}%)`}
+                    ></div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
