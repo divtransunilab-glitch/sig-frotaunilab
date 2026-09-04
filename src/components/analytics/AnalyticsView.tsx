@@ -27,8 +27,7 @@ import {
   Brain,
   Lightbulb,
   TrendingDown,
-  TrendingUp,
-  Zap
+  TrendingUp
 } from 'lucide-react';
 import { parseISO, getMonth, getYear, getDay, isValid } from 'date-fns';
 import { safeFormatDate } from '../../utils/dateUtils';
@@ -62,7 +61,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   // Overrides locais por veículo (Permite editar Km/L e R$/km de manutenção diretamente na tabela)
   const [vehicleOverrides, setVehicleOverrides] = useState<Record<string, { avg_km_per_liter?: number; operational_cost_per_km?: number }>>({});
 
-  // Modo do Heatmap: 'slots' (2 em 2h), 'hours' (06h-22h), 'shifts' (Turnos)
+  // Modo do Heatmap: 'slots' (Faixas), 'hours' (05h-22h), 'shifts' (Turnos)
   const [heatmapMode, setHeatmapMode] = useState<'slots' | 'hours' | 'shifts'>('slots');
 
   // Célula selecionada/hover do Heatmap para detalhamento
@@ -308,51 +307,50 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     return Object.values(map).sort((a, b) => b.count - a.count);
   }, [tripsCostData, drivers]);
 
-  // --- MATRIZES DE HEATMAP ---
+  // --- MATRIZES DE HEATMAP OPERACIONAL (Regra de Negócio Atualizada) ---
   const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-  // Modo 1: Faixas de Horários de 2h em 2h
+  // Modo 1: Faixas de Horários reais de operação da UNILAB (05h às 24h)
   const timeSlotLabels = [
-    '06h - 08h',
-    '08h - 10h',
-    '10h - 12h',
-    '12h - 14h',
-    '14h - 16h',
-    '16h - 18h',
-    '18h - 20h',
-    '20h - 24h',
+    '00h - 05h',
+    '05h - 07h',
+    '07h - 09h',
+    '09h - 11h',
+    '11h - 13h',
+    '13h - 15h',
+    '15h - 18h',
+    '18h - 24h',
   ];
 
   const getTimeSlotIndex = (hour: number) => {
-    if (hour < 6) return 7;
-    if (hour >= 6 && hour < 8) return 0;
-    if (hour >= 8 && hour < 10) return 1;
-    if (hour >= 10 && hour < 12) return 2;
-    if (hour >= 12 && hour < 14) return 3;
-    if (hour >= 14 && hour < 16) return 4;
-    if (hour >= 16 && hour < 18) return 5;
-    if (hour >= 18 && hour < 20) return 6;
-    return 7;
+    if (hour < 5) return 0; // 00h - 05h (Madrugada)
+    if (hour >= 5 && hour < 7) return 1; // 05h - 07h (Início Manhã / Saídas 05h e 06h)
+    if (hour >= 7 && hour < 9) return 2; // 07h - 09h (Manhã Pico / Saídas 07h e 08h)
+    if (hour >= 9 && hour < 11) return 3; // 09h - 11h
+    if (hour >= 11 && hour < 13) return 4; // 11h - 13h (Almoço / Saídas 11h e 12h)
+    if (hour >= 13 && hour < 15) return 5; // 13h - 15h
+    if (hour >= 15 && hour < 18) return 6; // 15h - 18h
+    return 7; // 18h - 24h (Noite)
   };
 
-  // Modo 2: Horas Individuais (06h às 22h)
-  const individualHours = Array.from({ length: 17 }, (_, i) => i + 6); // 6..22
+  // Modo 2: Horas Individuais (05h às 22h)
+  const individualHours = Array.from({ length: 18 }, (_, i) => i + 5); // 5..22
 
-  // Modo 3: Turnos Operacionais
-  const shiftLabels = ['Manhã (06h-12h)', 'Tarde (12h-18h)', 'Noite (18h-24h)', 'Madrugada (00h-06h)'];
+  // Modo 3: Turnos Operacionais da UNILAB
+  const shiftLabels = ['Manhã (05h-12h)', 'Tarde (12h-18h)', 'Noite (18h-24h)', 'Madrugada (00h-05h)'];
 
   const getShiftIndex = (hour: number) => {
-    if (hour >= 6 && hour < 12) return 0;
-    if (hour >= 12 && hour < 18) return 1;
-    if (hour >= 18 && hour <= 23) return 2;
-    return 3;
+    if (hour >= 5 && hour < 12) return 0; // Manhã (05h às 11:59)
+    if (hour >= 12 && hour < 18) return 1; // Tarde (12h às 17:59)
+    if (hour >= 18 && hour <= 23) return 2; // Noite (18h às 23:59)
+    return 3; // Madrugada (00h às 04:59)
   };
 
   // Heatmap Data Structures
   const { slotMatrix, slotTripsMatrix, hourMatrix, shiftMatrix, peakDay, peakHourSlot, hourlyDistribution } = useMemo(() => {
     const sMatrix: number[][] = Array(7).fill(0).map(() => Array(8).fill(0));
     const sTrips: TripRequest[][][] = Array(7).fill(null).map(() => Array(8).fill(null).map(() => []));
-    const hMatrix: number[][] = Array(7).fill(0).map(() => Array(17).fill(0));
+    const hMatrix: number[][] = Array(7).fill(0).map(() => Array(18).fill(0));
     const shMatrix: number[][] = Array(7).fill(0).map(() => Array(4).fill(0));
     const hDist: Record<number, number> = {};
 
@@ -369,9 +367,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         sMatrix[day][slotIdx] += 1;
         sTrips[day][slotIdx].push(t);
 
-        // Individual Hours Matrix
-        if (hour >= 6 && hour <= 22) {
-          const hIdx = hour - 6;
+        // Individual Hours Matrix (05h a 22h)
+        if (hour >= 5 && hour <= 22) {
+          const hIdx = hour - 5;
           hMatrix[day][hIdx] += 1;
           hDist[hour] = (hDist[hour] || 0) + 1;
         }
@@ -441,9 +439,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     const worstSlots = sorted.filter((s) => s.count > 0).slice(0, 3);
 
     // Melhores Horários / Janelas de Maior Disponibilidade da Frota:
-    // Filtramos dias úteis (Segunda a Sexta: dIdx 1..5) e horário comercial útil (06h às 18h: slotIdx 0..5)
+    // Filtramos dias úteis (Segunda a Sexta: dIdx 1..5) e faixas comerciais ativas com menor volume (slotIdx 3..6: 09h-18h)
     const weekdayCommercialSlots = sorted.filter(
-      (s) => s.dayIdx >= 1 && s.dayIdx <= 5 && s.slotIdx >= 0 && s.slotIdx <= 5
+      (s) => s.dayIdx >= 1 && s.dayIdx <= 5 && s.slotIdx >= 3 && s.slotIdx <= 6
     );
 
     // Ordena do menor volume para o maior entre as faixas comerciais ativas
@@ -456,7 +454,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     if (worstSlots.length > 0 && bestSlots.length > 0) {
       const topWorst = worstSlots[0];
       const topBest = bestSlots[0];
-      recommendation = `Para otimizar o fluxo operacional e evitar sobrecarga de veículos e motoristas, a IA da UNILAB recomenda priorizar agendamentos nos horários de menor demanda comercial, como ${topBest.dayName} (${topBest.slotLabel}), e evitar novas viagens concentradas em ${topWorst.dayName} (${topWorst.slotLabel}).`;
+      recommendation = `Devido ao elevado pico de saídas concentrado em ${topWorst.dayName} (${topWorst.slotLabel}), a IA da UNILAB recomenda que novas demandas institucionais flexíveis sejam agendadas prioritariamente em ${topBest.dayName} (${topBest.slotLabel}), reduzindo o risco de escassez de veículos e motoristas.`;
     } else {
       recommendation = 'O fluxo de agendamentos está distribuído de forma equilibrada sem gargalos operacionais.';
     }
@@ -485,10 +483,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   const getHeatmapColor = (value: number) => {
     if (value === 0) return 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100';
-    if (value === 1) return 'bg-brand-50 text-brand-900 border-brand-200 font-bold hover:bg-brand-100 shadow-2xs';
-    if (value === 2) return 'bg-brand-100 text-brand-950 border-brand-300 font-bold hover:bg-brand-200 shadow-xs';
-    if (value === 3) return 'bg-amber-200 text-amber-950 border-amber-300 font-extrabold hover:bg-amber-300 shadow-xs';
-    if (value === 4) return 'bg-orange-300 text-orange-950 border-orange-400 font-extrabold hover:bg-orange-400 shadow-sm';
+    if (value <= 2) return 'bg-brand-50 text-brand-900 border-brand-200 font-bold hover:bg-brand-100 shadow-2xs';
+    if (value <= 5) return 'bg-brand-100 text-brand-950 border-brand-300 font-bold hover:bg-brand-200 shadow-xs';
+    if (value <= 10) return 'bg-amber-200 text-amber-950 border-amber-300 font-extrabold hover:bg-amber-300 shadow-xs';
+    if (value <= 20) return 'bg-orange-300 text-orange-950 border-orange-400 font-extrabold hover:bg-orange-400 shadow-sm';
     return 'bg-rose-500 text-white border-rose-600 font-black shadow-md animate-pulse';
   };
 
@@ -602,7 +600,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             {/* Aba 1: Análise de Solicitações */}
             <button
               onClick={() => setActiveTab('requests')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'requests'
                   ? 'bg-brand-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
@@ -615,7 +613,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             {/* Aba 2: Análise de Custos */}
             <button
               onClick={() => setActiveTab('costs')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'costs'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
@@ -628,7 +626,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             {/* Aba 3: Parametrização */}
             <button
               onClick={() => setActiveTab('parameters')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'parameters'
                   ? 'bg-navy-950 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
@@ -751,7 +749,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       heatmapMode === 'slots' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Faixas de 2h
+                    Faixas Operacionais
                   </button>
                   <button
                     onClick={() => setHeatmapMode('hours')}
@@ -759,7 +757,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       heatmapMode === 'hours' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Horas (06h às 22h)
+                    Horas (05h às 22h)
                   </button>
                   <button
                     onClick={() => setHeatmapMode('shifts')}
@@ -795,7 +793,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             </div>
 
-            {/* 1. MODO FAIXAS DE 2H (DEFAULT) */}
+            {/* 1. MODO FAIXAS OPERACIONAIS (DEFAULT) */}
             {heatmapMode === 'slots' && (
               <div className="overflow-x-auto">
                 <table className="w-full text-center border-collapse text-xs">
@@ -848,7 +846,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             )}
 
-            {/* 2. MODO HORAS CHEIAS (06H ÀS 22H) */}
+            {/* 2. MODO HORAS CHEIAS (05H ÀS 22H) */}
             {heatmapMode === 'hours' && (
               <div className="overflow-x-auto">
                 <table className="w-full text-center border-collapse text-xs">
@@ -926,15 +924,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             )}
 
-            {/* Gráfico de Barras: Distribuição Geral por Hora do Dia */}
+            {/* Gráfico de Barras: Distribuição Geral por Hora do Dia (05:00 às 22:00) */}
             <div className="pt-4 border-t border-slate-100 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-extrabold text-slate-800">Partidas por Hora do Dia (06:00 às 22:00)</span>
+                <span className="font-extrabold text-slate-800">Partidas por Hora do Dia (05:00 às 22:00)</span>
                 <span className="text-slate-500 font-medium">Concentração de Saídas</span>
               </div>
               <div 
                 className="gap-1.5 h-20 items-end pt-2 w-full"
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(17, minmax(0, 1fr))' }}
+                style={{ display: 'grid', gridTemplateColumns: `repeat(${individualHours.length}, minmax(0, 1fr))` }}
               >
                 {individualHours.map((h) => {
                   const count = hourlyDistribution[h] || 0;
