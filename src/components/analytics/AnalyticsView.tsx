@@ -1,13 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { TripRequest, Vehicle, Driver, Contractor, City, FuelPrices, FuelType } from '../../types';
+import { TripRequest, Vehicle, Driver, Contractor, City, FuelPrices } from '../../types';
 import { CostService } from '../../services/costService';
 import { 
   BarChart3, 
-  TrendingUp, 
   DollarSign, 
   Milestone, 
   Users, 
-  Truck, 
   Calendar, 
   Building2, 
   Flame, 
@@ -15,24 +13,21 @@ import {
   CheckCircle2, 
   XCircle, 
   Clock, 
-  FileSpreadsheet, 
-  Download, 
-  Filter,
-  PieChart as PieChartIcon,
   Activity,
   Fuel,
   Wrench,
-  Settings2,
   RotateCcw,
   Save,
   Gauge,
   Sparkles,
   Info,
   Sliders,
-  Layers
+  AlertTriangle,
+  Search,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
-import { parseISO, getMonth, getYear, getDay, format, isValid } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { parseISO, getMonth, getYear, getDay, isValid } from 'date-fns';
 import { safeFormatDate } from '../../utils/dateUtils';
 
 interface AnalyticsViewProps {
@@ -50,12 +45,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   contractors,
   cities,
 }) => {
-  // Aba ativa: 'bi' (Painel Completo) ou 'parameters' (Parametrização de Tarifas)
-  const [activeTab, setActiveTab] = useState<'bi' | 'parameters'>('bi');
+  // Aba ativa: 'requests' (Análise de Solicitações), 'costs' (Análise de Custos) ou 'parameters' (Parametrização)
+  const [activeTab, setActiveTab] = useState<'requests' | 'costs' | 'parameters'>('requests');
 
   const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL'); // 'ALL' or '0'..'11'
   const [selectedMacro, setSelectedMacro] = useState<string>('ALL');
+  const [sectorSearchTerm, setSectorSearchTerm] = useState<string>('');
 
   // Parâmetros Financeiros Globais (Combustíveis e Manutenção por KM)
   const [fuelPrices, setFuelPrices] = useState<FuelPrices>(() => CostService.getFuelPrices());
@@ -125,6 +121,80 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       }
     });
   }, [trips, selectedYear, selectedMonth, selectedMacro]);
+
+  // Cálculos de Cumprimento de Prazos (Dentro do Prazo vs Fora do Prazo) por Setor / Unidade
+  const deadlineStats = useMemo(() => {
+    const total = scopedTrips.length;
+    const inside = scopedTrips.filter((t) => t.status_deadline === 'Dentro do Prazo').length;
+    const outside = scopedTrips.filter((t) => t.status_deadline === 'Fora do Prazo').length;
+    const insidePct = total > 0 ? Math.round((inside / total) * 100) : 0;
+    const outsidePct = total > 0 ? Math.round((outside / total) * 100) : 0;
+
+    // Agrupamento por Unidade Macro
+    const macroMap: Record<string, { total: number; inside: number; outside: number }> = {};
+    
+    // Agrupamento por Setor / Unidade Solicitante
+    const unitMap: Record<string, { requestingUnit: string; macroUnit: string; total: number; inside: number; outside: number }> = {};
+
+    scopedTrips.forEach((t) => {
+      const macro = t.macro_unit || 'Outros';
+      if (!macroMap[macro]) {
+        macroMap[macro] = { total: 0, inside: 0, outside: 0 };
+      }
+      macroMap[macro].total += 1;
+      if (t.status_deadline === 'Dentro do Prazo') {
+        macroMap[macro].inside += 1;
+      } else {
+        macroMap[macro].outside += 1;
+      }
+
+      const reqUnit = (t.requesting_unit || t.macro_unit || 'Não Informado').trim();
+      if (!unitMap[reqUnit]) {
+        unitMap[reqUnit] = { requestingUnit: reqUnit, macroUnit: macro, total: 0, inside: 0, outside: 0 };
+      }
+      unitMap[reqUnit].total += 1;
+      if (t.status_deadline === 'Dentro do Prazo') {
+        unitMap[reqUnit].inside += 1;
+      } else {
+        unitMap[reqUnit].outside += 1;
+      }
+    });
+
+    const macroDeadlineList = Object.entries(macroMap)
+      .map(([macro, data]) => {
+        const pctInside = data.total > 0 ? Math.round((data.inside / data.total) * 100) : 0;
+        const pctOutside = data.total > 0 ? Math.round((data.outside / data.total) * 100) : 0;
+        return { macro, ...data, pctInside, pctOutside };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    const unitDeadlineList = Object.values(unitMap)
+      .map((data) => {
+        const pctInside = data.total > 0 ? Math.round((data.inside / data.total) * 100) : 0;
+        const pctOutside = data.total > 0 ? Math.round((data.outside / data.total) * 100) : 0;
+        return { ...data, pctInside, pctOutside };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      total,
+      inside,
+      outside,
+      insidePct,
+      outsidePct,
+      macroDeadlineList,
+      unitDeadlineList,
+    };
+  }, [scopedTrips]);
+
+  // Setores Filtrados pelo Termo de Busca
+  const filteredUnitDeadlineList = useMemo(() => {
+    if (!sectorSearchTerm.trim()) return deadlineStats.unitDeadlineList;
+    const term = sectorSearchTerm.toLowerCase();
+    return deadlineStats.unitDeadlineList.filter(
+      (u) => u.requestingUnit.toLowerCase().includes(term) || u.macroUnit.toLowerCase().includes(term)
+    );
+  }, [deadlineStats.unitDeadlineList, sectorSearchTerm]);
 
   // Cálculos de Custos Detalhados de Todas as Viagens no Escopo
   const tripsCostData = useMemo(() => {
@@ -378,17 +448,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     };
   }, [scopedTrips]);
 
-  // Distribuição por Tipo de Atividade
+  // Distribuição por Tipo de Atividade (Organizada da maior quantidade para a menor)
   const activityDistribution = useMemo(() => {
     const map: Record<string, number> = {};
     scopedTrips.forEach((t) => {
       map[t.activity_type] = (map[t.activity_type] || 0) + 1;
     });
-    return Object.entries(map).map(([name, count]) => ({
-      name,
-      count,
-      pct: kpis.total > 0 ? Math.round((count / kpis.total) * 100) : 0,
-    }));
+    return Object.entries(map)
+      .map(([name, count]) => ({
+        name,
+        count,
+        pct: kpis.total > 0 ? Math.round((count / kpis.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
   }, [scopedTrips, kpis.total]);
 
   const getHeatmapColor = (value: number) => {
@@ -413,8 +485,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   return (
     <div className="space-y-5">
       
-      {/* Page Header: Título + Filtros de Ano e Mês diretamente ao lado para máxima praticidade */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Page Header: Título + Filtros de Ano, Mês, Unidade e Abas de Navegação */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         
         {/* Título do Painel */}
         <div className="flex items-center gap-3">
@@ -426,17 +498,17 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <h2 className="text-lg sm:text-xl font-extrabold text-navy-950 tracking-tight">
                 Painel de Análise & Inteligência (BI)
               </h2>
-              <span className="text-[10.5px] font-bold bg-brand-50 text-brand-700 px-2 py-0.5 rounded-md border border-brand-200 hidden sm:inline">
+              <span className="text-[10.5px] font-bold bg-brand-50 text-brand-700 px-2.5 py-0.5 rounded-md border border-brand-200 hidden sm:inline">
                 {scopedTrips.length} demandas
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Custos de combustível, manutenção por KM, centro de custos e heatmaps operacionais.
+              Análise de solicitações, cumprimento de prazos por setor, custos de combustível e parametrização.
             </p>
           </div>
         </div>
 
-        {/* Controles de Filtro: Ano, Mês, Unidade e Aba de Parametrização */}
+        {/* Controles: Filtros + Abas na ordem exata solicitada */}
         <div className="flex flex-wrap items-center gap-2">
           
           {/* Seletor de Ano */}
@@ -501,25 +573,45 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </select>
           </div>
 
-          {/* Botão / Switcher para alternar entre o Painel BI e a Parametrização */}
-          <div className="inline-flex p-0.5 bg-slate-100 rounded-xl border border-slate-200 ml-1">
+          {/* ABAS DE NAVEGAÇÃO NA ORDEM SOLICITADA:
+              1. Análise de Solicitações
+              2. Análise de Custos
+              3. Parametrização */}
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200/90 ml-1 gap-1">
+            
+            {/* Aba 1: Análise de Solicitações */}
             <button
-              onClick={() => setActiveTab('bi')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'bi'
-                  ? 'bg-white text-navy-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+              onClick={() => setActiveTab('requests')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                activeTab === 'requests'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5 text-brand-600" />
-              <span>Painel BI</span>
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>Análise de Solicitações</span>
             </button>
+
+            {/* Aba 2: Análise de Custos */}
+            <button
+              onClick={() => setActiveTab('costs')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                activeTab === 'costs'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+              }`}
+            >
+              <DollarSign className="w-3.5 h-3.5" />
+              <span>Análise de Custos</span>
+            </button>
+
+            {/* Aba 3: Parametrização */}
             <button
               onClick={() => setActiveTab('parameters')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
                 activeTab === 'parameters'
                   ? 'bg-navy-950 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
               <Sliders className="w-3.5 h-3.5 text-amber-400" />
@@ -531,104 +623,178 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* MODO 1: PAINEL DE ANÁLISE & BI COMPLETO                                   */}
+      {/* ABA 1: ANÁLISE DE SOLICITAÇÕES (DEMANDAS & PRAZOS DE ANTECEDÊNCIA)        */}
       {/* ========================================================================= */}
-      {activeTab === 'bi' && (
+      {activeTab === 'requests' && (
         <div className="space-y-6">
           
-          {/* KPI Cards Grid */}
+          {/* Cards de Resumo: Total de Demandas, Dentro do Prazo, Fora do Prazo e Atendimento */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            {/* Custo Total de Combustível */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Combustível Total</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                  <Fuel className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold text-navy-950">
-                  R$ {kpis.totalFuelCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
-                <span className="font-bold text-amber-700">{kpis.totalFuelLiters.toFixed(1)} L</span>
-                <span>•</span>
-                <span className="font-semibold">R$ {kpis.avgFuelCostPerKm.toFixed(2)}/km</span>
-              </div>
-            </div>
-
-            {/* Gasto Total com Manutenção Veicular */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Manutenção Veicular Total</span>
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                  <Wrench className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold text-navy-950">
-                  R$ {kpis.totalMaintenanceCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
-                <span className="font-bold text-indigo-700">Média: R$ {kpis.avgMaintenanceCostPerKm.toFixed(2)}/km</span>
-              </div>
-            </div>
-
-            {/* Custo Total Geral (Combustível + Manutenção) */}
+            {/* 1. Total de Solicitações */}
             <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Custo Total de Transporte</span>
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                  <DollarSign className="w-5 h-5" />
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total de Solicitações</span>
+                <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+                  <BarChart3 className="w-5 h-5" />
                 </div>
               </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold text-navy-950">
-                  R$ {kpis.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-navy-950">{deadlineStats.total}</span>
+                <span className="text-xs text-slate-500 font-bold">demandas</span>
               </div>
               <div className="mt-2 text-[11px] text-slate-500">
-                Custo total por KM: <strong>R$ {kpis.avgTotalCostPerKm.toFixed(2)}/km</strong>
+                Escopo de {selectedYear !== 'ALL' ? selectedYear : 'Todos os Anos'}
               </div>
             </div>
 
-            {/* KM Total Estimado / Real */}
+            {/* 2. Dentro do Prazo (>= 5 dias) */}
+            <div className="bg-white rounded-2xl p-5 border border-emerald-200/80 shadow-card relative overflow-hidden bg-gradient-to-br from-white to-emerald-50/30">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Dentro do Prazo (≥ 5d)</span>
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-emerald-950">{deadlineStats.inside}</span>
+                <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-300">
+                  {deadlineStats.insidePct}%
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-emerald-700 font-medium">
+                Solicitadas com antecedência legal suficiente
+              </div>
+            </div>
+
+            {/* 3. Fora do Prazo (< 5 dias) */}
+            <div className="bg-white rounded-2xl p-5 border border-rose-200/80 shadow-card relative overflow-hidden bg-gradient-to-br from-white to-rose-50/30">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">Fora do Prazo (&lt; 5d)</span>
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-rose-950">{deadlineStats.outside}</span>
+                <span className="text-xs font-extrabold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-300">
+                  {deadlineStats.outsidePct}%
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-rose-700 font-medium">
+                Solicitadas com urgência ou fora do prazo regulamentar
+              </div>
+            </div>
+
+            {/* 4. Taxa de Atendimento / Confirmação */}
             <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">KM Rodado no Período</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Taxa de Atendimento</span>
                 <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                  <Milestone className="w-5 h-5" />
+                  <CheckCircle className="w-5 h-5" />
                 </div>
               </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold text-navy-950">
-                  {kpis.totalRealKm.toLocaleString('pt-BR')}
-                </span>
-                <span className="text-xs text-slate-500 font-bold">KM</span>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-navy-950">{kpis.approvalRate}%</span>
+                <span className="text-xs text-slate-500 font-bold">confirmadas</span>
               </div>
               <div className="mt-2 text-[11px] text-slate-500">
-                {kpis.totalPassengers} passageiros atendidos
+                {kpis.confirmed} confirmadas • {kpis.pending} pendentes
               </div>
             </div>
 
           </div>
 
-          {/* TABELA DETALHADA: CUSTO DE COMBUSTÍVEL, MANUTENÇÃO POR KM E CONSUMO DE CADA VEÍCULO */}
+          {/* ========================================================================= */}
+          {/* SEÇÃO PRINCIPAL: ANÁLISE DE CUMPRIMENTO DE PRAZOS POR SETOR E UNIDADE MACRO */}
+          {/* ========================================================================= */}
+          
+          {/* 1. VISUALIZAÇÃO EM BARRAS COMPARATIVAS POR UNIDADE MACRO */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <Gauge className="w-5 h-5 text-brand-600" />
+                <Building2 className="w-5 h-5 text-brand-600" />
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                    Detalhamento dos Veículos: Consumo (Km/L), Manutenção (R$/km) e Custos
+                    Aderência ao Prazo por Unidade Macro (ICS, IDR, PROADI, etc.)
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Você pode ajustar a autonomia (Km/L) e o valor de manutenção por KM diretamente nos campos editáveis da tabela.
+                    Comparativo gráfico de demandas dentro (≥ 5 dias) e fora do prazo (&lt; 5 dias).
                   </p>
                 </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-bold shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-emerald-500"></span>
+                  <span className="text-slate-700">Dentro do Prazo</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-rose-500"></span>
+                  <span className="text-slate-700">Fora do Prazo</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {deadlineStats.macroDeadlineList.map((item) => (
+                <div key={item.macro} className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-slate-900 text-sm">{item.macro}</span>
+                      <span className="text-[10.5px] font-bold bg-white text-slate-600 px-2 py-0.5 rounded border border-slate-200">
+                        {item.total} solicitações
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-extrabold">
+                      <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                        {item.inside} ({item.pctInside}%)
+                      </span>
+                      <span className="text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded">
+                        {item.outside} ({item.pctOutside}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Barra Progressiva Empilhada (Stacked Bar) */}
+                  <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden flex shadow-2xs">
+                    <div
+                      className="bg-emerald-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
+                      style={{ width: `${item.pctInside}%` }}
+                      title={`Dentro do Prazo: ${item.inside} (${item.pctInside}%)`}
+                    ></div>
+                    <div
+                      className="bg-rose-500 h-3 transition-all duration-500 flex items-center justify-center text-[9px] font-black text-white"
+                      style={{ width: `${item.pctOutside}%` }}
+                      title={`Fora do Prazo: ${item.outside} (${item.pctOutside}%)`}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. TABELA DETALHADA POR SETOR / UNIDADE SOLICITANTE */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                  Detalhamento por Setor Solicitante (`requesting_unit`)
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Relatório completo de cumprimento dos prazos regulamentares de antecedência por cada setor da UNILAB.
+                </p>
+              </div>
+
+              {/* Campo de Busca de Setor */}
+              <div className="relative min-w-[240px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar setor ou unidade..."
+                  value={sectorSearchTerm}
+                  onChange={(e) => setSectorSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-hidden focus:border-brand-500 focus:bg-white transition-all"
+                />
               </div>
             </div>
 
@@ -636,125 +802,77 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 text-[10.5px] uppercase tracking-wider">
-                    <th className="py-2.5 px-3 pl-4">Veículo / Placa</th>
-                    <th className="py-2.5 px-2">Combustível</th>
-                    <th className="py-2.5 px-2 text-center w-28">Consumo (Km/L)</th>
-                    <th className="py-2.5 px-2 text-center w-28">Manutenção (R$/km)</th>
-                    <th className="py-2.5 px-2 text-center">KM Rodado</th>
-                    <th className="py-2.5 px-2 text-center">Litros Gastos</th>
-                    <th className="py-2.5 px-2 text-right">Combustível (R$)</th>
-                    <th className="py-2.5 px-2 text-right">Manutenção (R$)</th>
-                    <th className="py-2.5 px-2 text-right">Custo Total / KM</th>
-                    <th className="py-2.5 px-3 pr-4 text-right">Gasto Total Geral</th>
+                    <th className="py-2.5 px-3 pl-4">Setor / Unidade Solicitante</th>
+                    <th className="py-2.5 px-2">Unidade Macro</th>
+                    <th className="py-2.5 px-2 text-center">Total Solicitações</th>
+                    <th className="py-2.5 px-2 text-center text-emerald-800">Dentro do Prazo (≥ 5d)</th>
+                    <th className="py-2.5 px-2 text-center text-rose-800">Fora do Prazo (&lt; 5d)</th>
+                    <th className="py-2.5 px-3 pr-4 text-right">Aderência ao Regulamento</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[11px]">
-                  {vehicleStatsList.map((stat) => {
-                    const fuelBadge = stat.vehicle.fuel_type === 'Gasolina' || stat.vehicle.fuel_type === 'Flex'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-800';
+                  {filteredUnitDeadlineList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-6 text-slate-400 italic">
+                        Nenhum setor encontrado para a busca especificada.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUnitDeadlineList.map((unit) => {
+                      let badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                      let badgeText = 'Excelente (≥ 90%)';
+                      if (unit.pctInside < 75) {
+                        badgeColor = 'bg-rose-100 text-rose-800 border-rose-300';
+                        badgeText = 'Atenção (&lt; 75%)';
+                      } else if (unit.pctInside < 90) {
+                        badgeColor = 'bg-amber-100 text-amber-800 border-amber-300';
+                        badgeText = 'Regular (75-89%)';
+                      }
 
-                    return (
-                      <tr key={stat.vehicle.id} className="hover:bg-slate-50/80 transition-colors">
-                        
-                        {/* Placa & Modelo */}
-                        <td className="py-3 px-3 pl-4">
-                          <div className="font-bold text-navy-950 font-mono">{stat.vehicle.plate}</div>
-                          <div className="text-[10.5px] text-slate-600 font-medium truncate max-w-[140px]">{stat.vehicle.model}</div>
-                        </td>
+                      return (
+                        <tr key={unit.requestingUnit} className="hover:bg-slate-50/80 transition-colors">
+                          
+                          {/* Nome do Setor */}
+                          <td className="py-3 px-3 pl-4 font-bold text-navy-950">
+                            {unit.requestingUnit}
+                          </td>
 
-                        {/* Combustível */}
-                        <td className="py-3 px-2">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${fuelBadge}`}>
-                            {stat.vehicle.fuel_type}
-                          </span>
-                        </td>
+                          {/* Unidade Macro */}
+                          <td className="py-3 px-2">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {unit.macroUnit}
+                            </span>
+                          </td>
 
-                        {/* Consumo Km/L (Editável Inline) */}
-                        <td className="py-3 px-2 text-center">
-                          <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="1"
-                              max="40"
-                              value={stat.vehicle.avg_km_per_liter}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 1;
-                                setVehicleOverrides((prev) => ({
-                                  ...prev,
-                                  [stat.vehicle.id]: {
-                                    ...prev[stat.vehicle.id],
-                                    avg_km_per_liter: val,
-                                  },
-                                }));
-                              }}
-                              className="w-12 text-center font-bold text-slate-800 focus:outline-hidden text-xs"
-                            />
-                            <span className="text-[10px] text-slate-400 font-semibold">km/L</span>
-                          </div>
-                        </td>
+                          {/* Total Solicitações */}
+                          <td className="py-3 px-2 text-center font-extrabold text-slate-800">
+                            {unit.total}
+                          </td>
 
-                        {/* Custo Manutenção por KM (Editável Inline) */}
-                        <td className="py-3 px-2 text-center">
-                          <div className="inline-flex items-center gap-1 bg-yellow-50/60 border border-yellow-300 rounded-lg px-2 py-1 shadow-2xs">
-                            <span className="text-[10px] text-yellow-800 font-bold">R$</span>
-                            <input
-                              type="number"
-                              step="0.05"
-                              min="0"
-                              max="10"
-                              value={stat.vehicle.operational_cost_per_km}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                setVehicleOverrides((prev) => ({
-                                  ...prev,
-                                  [stat.vehicle.id]: {
-                                    ...prev[stat.vehicle.id],
-                                    operational_cost_per_km: val,
-                                  },
-                                }));
-                              }}
-                              className="w-12 text-center font-bold text-slate-900 bg-transparent focus:outline-hidden text-xs"
-                            />
-                          </div>
-                        </td>
+                          {/* Dentro do Prazo */}
+                          <td className="py-3 px-2 text-center font-bold text-emerald-700 bg-emerald-50/40">
+                            {unit.inside} <span className="text-[10px] font-normal text-emerald-600">({unit.pctInside}%)</span>
+                          </td>
 
-                        {/* KM Rodado */}
-                        <td className="py-3 px-2 text-center font-extrabold text-navy-950">
-                          {stat.totalKm} km
-                        </td>
+                          {/* Fora do Prazo */}
+                          <td className="py-3 px-2 text-center font-bold text-rose-700 bg-rose-50/40">
+                            {unit.outside} <span className="text-[10px] font-normal text-rose-600">({unit.pctOutside}%)</span>
+                          </td>
 
-                        {/* Litros Gastos */}
-                        <td className="py-3 px-2 text-center font-bold text-amber-700 bg-amber-50/50">
-                          {stat.totalFuelLiters.toFixed(1)} L
-                        </td>
+                          {/* Aderência Badge */}
+                          <td className="py-3 px-3 pr-4 text-right">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                              {unit.pctInside >= 90 && <CheckCircle2 className="w-3 h-3" />}
+                              {unit.pctInside < 90 && unit.pctInside >= 75 && <AlertCircle className="w-3 h-3" />}
+                              {unit.pctInside < 75 && <AlertTriangle className="w-3 h-3" />}
+                              <span>{badgeText}</span>
+                            </span>
+                          </td>
 
-                        {/* Combustível (R$) */}
-                        <td className="py-3 px-2 text-right font-bold text-slate-700">
-                          R$ {stat.totalFuelCost.toFixed(2)}
-                          <div className="text-[9.5px] text-slate-400">R$ {stat.fuelCostPerKm.toFixed(2)}/km</div>
-                        </td>
-
-                        {/* Manutenção (R$) */}
-                        <td className="py-3 px-2 text-right font-bold text-yellow-800">
-                          R$ {stat.totalOperationalCost.toFixed(2)}
-                          <div className="text-[9.5px] text-yellow-600">R$ {stat.operationalCostPerKm.toFixed(2)}/km</div>
-                        </td>
-
-                        {/* Custo Total / KM */}
-                        <td className="py-3 px-2 text-right font-extrabold text-brand-700">
-                          R$ {stat.totalCostPerKm.toFixed(2)}/km
-                        </td>
-
-                        {/* Gasto Total Geral */}
-                        <td className="py-3 px-3 pr-4 text-right font-black text-navy-950 text-xs">
-                          R$ {stat.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </td>
-
-                      </tr>
-                    );
-                  })}
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -983,7 +1101,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       ></div>
                       <span className="text-[9px] font-bold text-slate-400 group-hover:text-navy-900">{h}h</span>
                       {count > 0 && (
-                        <div className="absolute -top-7 opacity-0 group-hover:opacity-100 bg-navy-950 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow transition-opacity pointer-events-none whitespace-nowrap z-10">
+                        <div className="absolute -top-7 opacity-0 group-hover:opacity-100 bg-navy-950 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm transition-opacity pointer-events-none whitespace-nowrap z-10">
                           {count} viagens
                         </div>
                       )}
@@ -994,58 +1112,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </div>
           </div>
 
-          {/* TWO COLUMNS: CUSTOS POR UNIDADE MACRO & TOP REQUISITANTES */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* COLUNAS INFERIORES: RANKING SOLICITANTES, MOTORISTAS E FINALIDADES */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* 1. Custos e Consumo por Unidade Macro */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-brand-600" />
-                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                    Centro de Custos por Unidade Macro
-                  </h3>
-                </div>
-                <span className="text-[11px] font-bold text-slate-500">Participação Orçamentária</span>
-              </div>
-
-              <div className="space-y-3.5 pt-1">
-                {macroStats.length === 0 ? (
-                  <div className="text-center text-slate-400 py-8 text-xs">Sem viagens no período selecionado</div>
-                ) : (
-                  macroStats.map((item) => (
-                    <div key={item.unit} className="space-y-1.5 p-2.5 rounded-xl hover:bg-slate-50/80 transition-colors border border-transparent hover:border-slate-100">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-extrabold text-slate-900">{item.unit}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-500 font-medium">{item.count} viagens ({item.km} km)</span>
-                          <span className="font-bold text-emerald-700">
-                            R$ {item.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-brand-500 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${Math.max(item.costPercent, 4)}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* 2. Top Solicitantes Mais Ativos */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-              <div className="flex items-center justify-between">
+            {/* 1. Top Solicitantes Mais Ativos */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Award className="w-5 h-5 text-amber-500" />
-                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                    Top Solicitantes Mais Ativos
+                  <h3 className="font-extrabold text-sm text-navy-950">
+                    Top Solicitantes
                   </h3>
                 </div>
-                <span className="text-[11px] font-bold text-slate-500">Ranking por Demandas</span>
+                <span className="text-[10.5px] font-bold text-slate-500">Ranking</span>
               </div>
 
               <div className="divide-y divide-slate-100">
@@ -1057,19 +1136,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     const medalBadge = idx < 3 ? medalColors[idx] : 'bg-slate-100 text-slate-600';
 
                     return (
-                      <div key={idx} className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-xl transition-colors text-xs">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center font-extrabold text-[11px] shrink-0 ${medalBadge}`}>
+                      <div key={idx} className="py-2 flex items-center justify-between gap-3 hover:bg-slate-50/80 px-1 rounded-xl transition-colors text-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 ${medalBadge}`}>
                             {idx + 1}º
                           </span>
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 truncate" title={req.name}>{req.name}</div>
-                            <div className="text-[10.5px] text-slate-500 font-medium">{req.unit}</div>
+                            <div className="text-[10px] text-slate-500 font-medium">{req.unit}</div>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
                           <span className="font-extrabold text-navy-950 block">{req.count} viagens</span>
-                          <span className="text-[10px] text-brand-700 font-bold">{req.km} km • R$ {req.totalCost.toFixed(0)}</span>
                         </div>
                       </div>
                     );
@@ -1078,38 +1156,33 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             </div>
 
-          </div>
-
-          {/* FINAL SECTION: PRODUTIVIDADE MOTORISTAS & FINALIDADE DE ATIVIDADE */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* 1. Produtividade dos Motoristas */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-              <div className="flex items-center justify-between">
+            {/* 2. Produtividade dos Motoristas */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-emerald-600" />
-                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                    Produtividade dos Motoristas
+                  <h3 className="font-extrabold text-sm text-navy-950">
+                    Motoristas Escalados
                   </h3>
                 </div>
-                <span className="text-[11px] font-bold text-slate-500">Escalas & Rotas Atendidas</span>
+                <span className="text-[10.5px] font-bold text-slate-500">Escalas</span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                 {topDrivers.length === 0 ? (
-                  <div className="text-center text-slate-400 py-8 text-xs">Nenhum motorista escalado no período</div>
+                  <div className="text-center text-slate-400 py-8 text-xs">Nenhum motorista escalado</div>
                 ) : (
                   topDrivers.map((item) => (
-                    <div key={item.driver.id} className="p-3 rounded-xl bg-slate-50/70 border border-slate-200/60 flex items-center justify-between gap-3 text-xs">
+                    <div key={item.driver.id} className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-center justify-between gap-2 text-xs">
                       <div className="min-w-0 space-y-0.5">
-                        <div className="font-bold text-slate-900">{item.driver.name}</div>
-                        <div className="text-[11px] text-slate-500 font-medium">
-                          CNH Cat. {item.driver.cnh_category} • {item.driver.driver_category} • {getContractorName(item.driver.contractor_id)}
+                        <div className="font-bold text-slate-900 truncate">{item.driver.name}</div>
+                        <div className="text-[10px] text-slate-500 font-medium truncate">
+                          {getContractorName(item.driver.contractor_id)}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-extrabold text-navy-950">{item.count} viagens</div>
-                        <div className="text-[10.5px] text-emerald-700 font-bold">{item.km} km guiados</div>
+                        <div className="text-[10px] text-emerald-700 font-bold">{item.km} km</div>
                       </div>
                     </div>
                   ))
@@ -1117,21 +1190,26 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             </div>
 
-            {/* 2. Distribuição por Finalidade */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
-                  Distribuição por Finalidade Acadêmica
-                </h3>
+            {/* 3. Distribuição por Finalidade Acadêmica (Organizada da maior para a menor) */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-indigo-600" />
+                  <h3 className="font-extrabold text-sm text-navy-950">
+                    Finalidade Institucional
+                  </h3>
+                </div>
+                <span className="text-[10.5px] font-bold text-slate-500">Maior p/ Menor</span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="space-y-2">
                 {activityDistribution.map((act) => (
-                  <div key={act.name} className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-1 text-center">
-                    <span className="text-[11px] font-bold text-slate-500 block truncate" title={act.name}>{act.name}</span>
-                    <div className="text-2xl font-extrabold text-navy-950">{act.count}</div>
-                    <div className="text-xs font-bold text-brand-600">{act.pct}% das demandas</div>
+                  <div key={act.name} className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/70 flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700 truncate" title={act.name}>{act.name}</span>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black text-navy-950">{act.count}</span>
+                      <span className="text-[10px] font-bold text-brand-600 block">{act.pct}%</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1143,7 +1221,279 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* MODO 2: PARAMETRIZAÇÃO & CUSTOS POR KM                                    */}
+      {/* ABA 2: ANÁLISE DE CUSTOS (COMBUSTÍVEL, MANUTENÇÃO & FROTA)                */}
+      {/* ========================================================================= */}
+      {activeTab === 'costs' && (
+        <div className="space-y-6">
+          
+          {/* KPI Cards Grid de Custos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Custo Total de Combustível */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Combustível Total</span>
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <Fuel className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-navy-950">
+                  R$ {kpis.totalFuelCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <span className="font-bold text-amber-700">{kpis.totalFuelLiters.toFixed(1)} L</span>
+                <span>•</span>
+                <span className="font-semibold">R$ {kpis.avgFuelCostPerKm.toFixed(2)}/km</span>
+              </div>
+            </div>
+
+            {/* Gasto Total com Manutenção Veicular */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Manutenção Veicular Total</span>
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Wrench className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-navy-950">
+                  R$ {kpis.totalMaintenanceCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <span className="font-bold text-indigo-700">Média: R$ {kpis.avgMaintenanceCostPerKm.toFixed(2)}/km</span>
+              </div>
+            </div>
+
+            {/* Custo Total Geral (Combustível + Manutenção) */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Custo Total de Transporte</span>
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-navy-950">
+                  R$ {kpis.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                Custo total por KM: <strong>R$ {kpis.avgTotalCostPerKm.toFixed(2)}/km</strong>
+              </div>
+            </div>
+
+            {/* KM Total Estimado / Real */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">KM Rodado no Período</span>
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Milestone className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-1">
+                <span className="text-2xl font-extrabold text-navy-950">
+                  {kpis.totalRealKm.toLocaleString('pt-BR')}
+                </span>
+                <span className="text-xs text-slate-500 font-bold">KM</span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                {kpis.totalPassengers} passageiros atendidos
+              </div>
+            </div>
+
+          </div>
+
+          {/* TABELA DETALHADA: CUSTO DE COMBUSTÍVEL, MANUTENÇÃO POR KM E CONSUMO DE CADA VEÍCULO */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-brand-600" />
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                    Detalhamento dos Veículos: Consumo (Km/L), Manutenção (R$/km) e Custos
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Ajuste a autonomia (Km/L) e a taxa de manutenção por KM nos campos editáveis da tabela.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 text-[10.5px] uppercase tracking-wider">
+                    <th className="py-2.5 px-3 pl-4">Veículo / Placa</th>
+                    <th className="py-2.5 px-2">Combustível</th>
+                    <th className="py-2.5 px-2 text-center w-28">Consumo (Km/L)</th>
+                    <th className="py-2.5 px-2 text-center w-28">Manutenção (R$/km)</th>
+                    <th className="py-2.5 px-2 text-center">KM Rodado</th>
+                    <th className="py-2.5 px-2 text-center">Litros Gastos</th>
+                    <th className="py-2.5 px-2 text-right">Combustível (R$)</th>
+                    <th className="py-2.5 px-2 text-right">Manutenção (R$)</th>
+                    <th className="py-2.5 px-2 text-right">Custo Total / KM</th>
+                    <th className="py-2.5 px-3 pr-4 text-right">Gasto Total Geral</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[11px]">
+                  {vehicleStatsList.map((stat) => {
+                    const fuelBadge = stat.vehicle.fuel_type === 'Gasolina' || stat.vehicle.fuel_type === 'Flex'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-emerald-100 text-emerald-800';
+
+                    return (
+                      <tr key={stat.vehicle.id} className="hover:bg-slate-50/80 transition-colors">
+                        
+                        {/* Placa & Modelo */}
+                        <td className="py-3 px-3 pl-4">
+                          <div className="font-bold text-navy-950 font-mono">{stat.vehicle.plate}</div>
+                          <div className="text-[10.5px] text-slate-600 font-medium truncate max-w-[140px]">{stat.vehicle.model}</div>
+                        </td>
+
+                        {/* Combustível */}
+                        <td className="py-3 px-2">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${fuelBadge}`}>
+                            {stat.vehicle.fuel_type}
+                          </span>
+                        </td>
+
+                        {/* Consumo Km/L (Editável Inline) */}
+                        <td className="py-3 px-2 text-center">
+                          <div className="inline-flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 shadow-2xs">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="1"
+                              max="40"
+                              value={stat.vehicle.avg_km_per_liter}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 1;
+                                setVehicleOverrides((prev) => ({
+                                  ...prev,
+                                  [stat.vehicle.id]: {
+                                    ...prev[stat.vehicle.id],
+                                    avg_km_per_liter: val,
+                                  },
+                                }));
+                              }}
+                              className="w-12 text-center font-bold text-slate-800 focus:outline-hidden text-xs"
+                            />
+                            <span className="text-[10px] text-slate-400 font-semibold">km/L</span>
+                          </div>
+                        </td>
+
+                        {/* Custo Manutenção por KM (Editável Inline) */}
+                        <td className="py-3 px-2 text-center">
+                          <div className="inline-flex items-center gap-1 bg-yellow-50/60 border border-yellow-300 rounded-lg px-2 py-1 shadow-2xs">
+                            <span className="text-[10px] text-yellow-800 font-bold">R$</span>
+                            <input
+                              type="number"
+                              step="0.05"
+                              min="0"
+                              max="10"
+                              value={stat.vehicle.operational_cost_per_km}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setVehicleOverrides((prev) => ({
+                                  ...prev,
+                                  [stat.vehicle.id]: {
+                                    ...prev[stat.vehicle.id],
+                                    operational_cost_per_km: val,
+                                  },
+                                }));
+                              }}
+                              className="w-12 text-center font-bold text-slate-900 bg-transparent focus:outline-hidden text-xs"
+                            />
+                          </div>
+                        </td>
+
+                        {/* KM Rodado */}
+                        <td className="py-3 px-2 text-center font-extrabold text-navy-950">
+                          {stat.totalKm} km
+                        </td>
+
+                        {/* Litros Gastos */}
+                        <td className="py-3 px-2 text-center font-bold text-amber-700 bg-amber-50/50">
+                          {stat.totalFuelLiters.toFixed(1)} L
+                        </td>
+
+                        {/* Combustível (R$) */}
+                        <td className="py-3 px-2 text-right font-bold text-slate-700">
+                          R$ {stat.totalFuelCost.toFixed(2)}
+                          <div className="text-[9.5px] text-slate-400">R$ {stat.fuelCostPerKm.toFixed(2)}/km</div>
+                        </td>
+
+                        {/* Manutenção (R$) */}
+                        <td className="py-3 px-2 text-right font-bold text-yellow-800">
+                          R$ {stat.totalOperationalCost.toFixed(2)}
+                          <div className="text-[9.5px] text-yellow-600">R$ {stat.operationalCostPerKm.toFixed(2)}/km</div>
+                        </td>
+
+                        {/* Custo Total / KM */}
+                        <td className="py-3 px-2 text-right font-extrabold text-brand-700">
+                          R$ {stat.totalCostPerKm.toFixed(2)}/km
+                        </td>
+
+                        {/* Gasto Total Geral */}
+                        <td className="py-3 px-3 pr-4 text-right font-black text-navy-950 text-xs">
+                          R$ {stat.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Centro de Custos por Unidade Macro */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-brand-600" />
+                <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                  Centro de Custos por Unidade Macro
+                </h3>
+              </div>
+              <span className="text-[11px] font-bold text-slate-500">Participação Orçamentária</span>
+            </div>
+
+            <div className="space-y-3.5 pt-1">
+              {macroStats.length === 0 ? (
+                <div className="text-center text-slate-400 py-8 text-xs">Sem viagens no período selecionado</div>
+              ) : (
+                macroStats.map((item) => (
+                  <div key={item.unit} className="space-y-1.5 p-2.5 rounded-xl hover:bg-slate-50/80 transition-colors border border-transparent hover:border-slate-100">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-slate-900">{item.unit}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-500 font-medium">{item.count} viagens ({item.km} km)</span>
+                        <span className="font-bold text-emerald-700">
+                          R$ {item.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(item.costPercent, 4)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ABA 3: PARAMETRIZAÇÃO & CUSTOS POR KM                                    */}
       {/* ========================================================================= */}
       {activeTab === 'parameters' && (
         <div className="space-y-6">
@@ -1174,7 +1524,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <div className="flex items-center gap-2.5">
                 <button
                   onClick={handleSaveParameters}
-                  className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-brand-600/30 transition-all active:scale-95"
+                  className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-brand-600/30 transition-all active:scale-95 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
                   <span>{isSaved ? 'Parâmetros Salvos!' : 'Salvar Parâmetros'}</span>
@@ -1182,7 +1532,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 <button
                   onClick={handleResetParameters}
                   title="Restaurar parâmetros padrão da UNILAB"
-                  className="p-2 text-slate-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                  className="p-2 text-slate-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span className="hidden sm:inline">Restaurar Padrão</span>
@@ -1318,7 +1668,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
               <button
                 onClick={() => setSelectedCellTrips(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <XCircle className="w-5 h-5" />
               </button>
