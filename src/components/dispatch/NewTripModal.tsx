@@ -187,9 +187,14 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   }, [originCityId, destinationCityId, intermediateCities, extraKm]);
 
   // Cálculo instantâneo de Prazo de Antecedência
-  const { advanceDays, statusDeadline } = TripService.calculateDeadline(
+  const { advanceDays, requiredDays, statusDeadline } = TripService.calculateDeadline(
     receivedAt,
-    departureDatetime
+    departureDatetime,
+    {
+      passenger_count: typeof passengerCount === 'number' ? passengerCount : 1,
+      activity_type: activityType || undefined,
+      trip_objective: tripObjective,
+    }
   );
 
   // Sugestão de Veículo por capacidade
@@ -343,8 +348,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-pulse" />
               )}
               <div className="text-[11px]">
-                <span className="font-bold block">Status do Prazo: {statusDeadline}</span>
-                <span>{advanceDays} dias de antecedência • Saída em dia de {departureDayOfWeek}</span>
+                <span className="font-bold block">Status do Prazo: {statusDeadline} (Mínimo exigido: {requiredDays} dias)</span>
+                <span>{advanceDays} dias de antecedência • Saída em {departureDayOfWeek}</span>
               </div>
             </div>
 

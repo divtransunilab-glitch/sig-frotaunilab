@@ -494,7 +494,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               </div>
 
               <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
-                <li>As solicitações devem ser enviadas com antecedência mínima de <strong>5 (cinco) dias úteis</strong>.</li>
+                <li>O prazo mínimo para apresentação da solicitação será de <strong>72 (setenta e duas) horas úteis</strong> antes da partida, exceto para viagens de transporte coletivo de discentes, que deverão ser solicitadas com, no mínimo, <strong>7 (sete) dias úteis</strong> de antecedência.</li>
                 <li>Demandas com antecedência inferior estarão sujeitas a avaliação prioritária e justificativa formal de urgência.</li>
                 <li>Veículos e motoristas serão alocados de acordo com a disponibilidade contratual da frota oficial e capacidade de passageiros.</li>
               </ul>

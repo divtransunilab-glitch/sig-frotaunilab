@@ -22,7 +22,7 @@ export class TripService {
         const parsed: TripRequest[] = JSON.parse(saved);
         return parsed.map((t) => {
           if (t.received_at && t.departure_datetime) {
-            const { advanceDays, statusDeadline } = this.calculateDeadline(t.received_at, t.departure_datetime);
+            const { advanceDays, statusDeadline } = this.calculateDeadline(t.received_at, t.departure_datetime, t);
             return {
               ...t,
               advance_days: advanceDays,
@@ -110,20 +110,41 @@ export class TripService {
   }
 
   /**
-   * Calcula antecedência e status de prazo
+   * Calcula antecedência e status de prazo segundo as normas oficiais da Portaria PROADI:
+   * - Transporte Coletivo de Discentes (Graduação/Pós ou PAX > 4): Mínimo 7 dias de antecedência.
+   * - Demais Solicitações (Padrão / 72h úteis): Mínimo 3 dias de antecedência.
    */
-  static calculateDeadline(receivedAtStr: string, departureStr: string): {
+  static calculateDeadline(
+    receivedAtStr: string, 
+    departureStr: string,
+    tripDetails?: Partial<TripRequest>
+  ): {
     advanceDays: number;
+    requiredDays: number;
     statusDeadline: StatusDeadline;
   } {
     const received = parseISO(receivedAtStr);
     const departure = parseISO(departureStr);
     const advanceDays = Math.max(0, differenceInCalendarDays(departure, received));
     
-    // Regra: Mínimo de 5 dias de antecedência para estar "Dentro do Prazo"
-    const statusDeadline: StatusDeadline = advanceDays >= 5 ? 'Dentro do Prazo' : 'Fora do Prazo';
+    // Identifica se é transporte coletivo de discentes (estudantes)
+    const pax = tripDetails?.passenger_count ?? 1;
+    const act = (tripDetails?.activity_type || '').toString();
+    const obj = (tripDetails?.trip_objective || '').toString().toLowerCase();
 
-    return { advanceDays, statusDeadline };
+    const isStudentCollective = 
+      pax > 4 || 
+      (pax > 1 && (act === 'Graduação' || act === 'Pós Graduação')) ||
+      obj.includes('discente') || 
+      obj.includes('aluno') || 
+      obj.includes('estudante') || 
+      obj.includes('aula de campo');
+
+    // Regra da Portaria PROADI: 7 dias para transporte coletivo de discentes, 3 dias (72h úteis) para demais solicitações
+    const requiredDays = isStudentCollective ? 7 : 3;
+    const statusDeadline: StatusDeadline = advanceDays >= requiredDays ? 'Dentro do Prazo' : 'Fora do Prazo';
+
+    return { advanceDays, requiredDays, statusDeadline };
   }
 
   /**

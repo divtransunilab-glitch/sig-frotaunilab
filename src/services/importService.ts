@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { DistanceService } from './distanceService';
 import { FleetService } from './fleetService';
+import { TripService } from './tripService';
 import { isValid, differenceInCalendarDays, parseISO } from 'date-fns';
 
 export interface ParsedSheetResult {
@@ -621,8 +622,6 @@ export class ImportService {
             ? Number(row[idxAdvanceDays])
             : calculatedAdvance;
 
-          const statusDeadline: StatusDeadline = advanceDays >= 5 ? 'Dentro do Prazo' : 'Fora do Prazo';
-
           // Itinerário
           const originName = idxOrigin !== -1 ? String(row[idxOrigin] || '') : 'Redenção';
           const destName = idxDest !== -1 ? String(row[idxDest] || '') : 'Fortaleza';
@@ -642,6 +641,11 @@ export class ImportService {
           const macroUnit = idxMacro !== -1 ? this.normalizeMacroUnit(String(row[idxMacro] || '')) : 'IDR';
           const requestingUnit = idxReqUnit !== -1 ? String(row[idxReqUnit] || '').trim() : `${macroUnit} Acadêmico`;
           const activityType = idxActivity !== -1 ? this.normalizeActivityType(String(row[idxActivity] || '')) : 'Graduação';
+
+          const { statusDeadline } = TripService.calculateDeadline(receivedAt, departureDatetime, {
+            passenger_count: pax,
+            activity_type: activityType,
+          });
 
           // Verificação de Alocação de Recursos (Contratada, Motorista, Veículo)
           const contName = idxContractor !== -1 ? String(row[idxContractor] || '').trim() : '';
