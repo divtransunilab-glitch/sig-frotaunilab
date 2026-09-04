@@ -10,7 +10,7 @@ import {
 } from '../types';
 import { DistanceService } from './distanceService';
 import { FleetService } from './fleetService';
-import { isValid } from 'date-fns';
+import { isValid, differenceInCalendarDays, parseISO } from 'date-fns';
 
 export interface ParsedSheetResult {
   sheetName: string;
@@ -606,16 +606,22 @@ export class ImportService {
           const receivedDateStr = rawRecDate ? this.parseExcelDate(rawRecDate, sheetMonthIndex, sheetYear) : depDateStr;
           const receivedAt = `${receivedDateStr}T09:00:00-03:00`;
 
-          const advanceDays = idxAdvanceDays !== -1 && Number(row[idxAdvanceDays])
-            ? Number(row[idxAdvanceDays])
-            : 7;
-
-          let statusDeadline: StatusDeadline = advanceDays >= 5 ? 'Dentro do Prazo' : 'Fora do Prazo';
-          if (idxStatusDeadline !== -1 && row[idxStatusDeadline]) {
-            const cleanDeadline = String(row[idxStatusDeadline]).toLowerCase();
-            if (cleanDeadline.includes('fora')) statusDeadline = 'Fora do Prazo';
-            else if (cleanDeadline.includes('dentro')) statusDeadline = 'Dentro do Prazo';
+          let calculatedAdvance = 0;
+          try {
+            const recObj = parseISO(receivedAt);
+            const depObj = parseISO(departureDatetime);
+            if (isValid(recObj) && isValid(depObj)) {
+              calculatedAdvance = Math.max(0, differenceInCalendarDays(depObj, recObj));
+            }
+          } catch {
+            calculatedAdvance = 7;
           }
+
+          const advanceDays = (idxAdvanceDays !== -1 && !isNaN(Number(row[idxAdvanceDays])) && Number(row[idxAdvanceDays]) > 0)
+            ? Number(row[idxAdvanceDays])
+            : calculatedAdvance;
+
+          const statusDeadline: StatusDeadline = advanceDays >= 5 ? 'Dentro do Prazo' : 'Fora do Prazo';
 
           // Itinerário
           const originName = idxOrigin !== -1 ? String(row[idxOrigin] || '') : 'Redenção';

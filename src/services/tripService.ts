@@ -116,8 +116,8 @@ export class TripService {
     advanceDays: number;
     statusDeadline: StatusDeadline;
   } {
-    const received = new Date(receivedAtStr);
-    const departure = new Date(departureStr);
+    const received = parseISO(receivedAtStr);
+    const departure = parseISO(departureStr);
     const advanceDays = Math.max(0, differenceInCalendarDays(departure, received));
     
     // Regra: Mínimo de 5 dias de antecedência para estar "Dentro do Prazo"
@@ -153,8 +153,8 @@ export class TripService {
         ...tripData,
         received_at: receivedAt,
         departure_datetime: departure,
-        advance_days: tripData.advance_days ?? advanceDays,
-        status_deadline: tripData.status_deadline ?? statusDeadline,
+        advance_days: advanceDays,
+        status_deadline: statusDeadline,
         estimated_km: estimatedKm,
         updated_at: now,
       } as TripRequest;
