@@ -601,7 +601,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <div>
             <div className="font-bold text-slate-700">UNILAB - Divisão de Transportes (DIVTRANS / PROADI)</div>
-            <p className="text-[11px] text-slate-400">Campus da Liberdade - Redenção/CE • Frotas Oficiais e Locadas</p>
+            <p className="text-[11px] text-slate-400">Campus da Liberdade - Redenção/CE • Frotas Oficiais e Locadas • Dados a partir de Agosto de 2026</p>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Suporte: divtrans@unilab.edu.br</span>

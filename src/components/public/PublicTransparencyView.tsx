@@ -493,12 +493,17 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
         <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
           <ShieldCheck className="w-5 h-5 text-emerald-700" />
         </div>
-        <div className="space-y-0.5 text-center sm:text-left flex-1">
-          <strong className="text-slate-900 block font-bold">
-            Compromisso Institucional de Transparência & Privacidade
-          </strong>
+        <div className="space-y-1 text-center sm:text-left flex-1">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+            <strong className="text-slate-900 block font-bold">
+              Compromisso Institucional de Transparência & Privacidade
+            </strong>
+            <span className="bg-brand-50 text-brand-800 border border-brand-200 font-bold text-[10.5px] px-2.5 py-0.5 rounded-full">
+              📅 Dados referentes a partir de Agosto de 2026
+            </span>
+          </div>
           <p className="text-[11px] text-slate-500">
-            Os dados deste painel são públicos e atualizados automaticamente pela Divisão de Transportes (DIVTRANS/PROADI).
+            Os dados deste painel são públicos, referentes ao período a partir de <strong>Agosto de 2026</strong>, e atualizados automaticamente pela Divisão de Transportes (DIVTRANS/PROADI).
             Em observância ao art. 31 da Lei nº 12.527/2011 (LAI) e à Lei Geral de Proteção de Dados (Lei nº 13.709/2018), 
             informações pessoais de solicitantes e passageiros são mantidas em sigilo institucional.
           </p>
