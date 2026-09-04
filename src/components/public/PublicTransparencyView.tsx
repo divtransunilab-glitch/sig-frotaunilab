@@ -15,7 +15,9 @@ import {
   GraduationCap, 
   Microscope, 
   HeartHandshake, 
-  Building2
+  Building2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { parseISO, isValid, getYear, getMonth } from 'date-fns';
 
@@ -32,6 +34,7 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
   const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL'); // 'ALL' or '0'..'11'
   const [selectedActivity, setSelectedActivity] = useState<string>('ALL');
+  const [showAllRoutes, setShowAllRoutes] = useState(false);
 
   const citiesMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -169,6 +172,11 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
       inDeadline,
       deadlineRate,
       byActivity,
+      allRoutes,
+      topRoutes,
+      otherRoutesCount: otherRoutes.length,
+      otherCount,
+      otherKm,
       sortedRoutes,
     };
   }, [filteredTrips]);
@@ -485,33 +493,29 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-extrabold text-sm text-navy-950 flex items-center gap-2">
               <MapPin className="w-4 h-4 text-rose-600" />
-              Rotas & Deslocamentos Mais Demandados
+              Rotas & Deslocamentos Demandados
             </h3>
-            <span className="text-[11px] text-slate-400 font-semibold">Top Rotas</span>
+            <span className="text-[11px] font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200/60">
+              {metrics.allRoutes.length} {metrics.allRoutes.length === 1 ? 'rota' : 'rotas mapeadas'}
+            </span>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            {metrics.sortedRoutes.length === 0 ? (
+          <div className="space-y-2.5 pt-1 max-h-[440px] overflow-y-auto pr-1">
+            {metrics.allRoutes.length === 0 ? (
               <div className="text-center py-6 text-slate-400 text-xs">Nenhum trajeto no período</div>
             ) : (
-              metrics.sortedRoutes.map((r, idx) => {
+              (showAllRoutes ? metrics.allRoutes : metrics.topRoutes).map((r, idx) => {
                 const pct = metrics.total > 0 ? Math.round((r.count / metrics.total) * 100) : 0;
                 return (
                   <div 
                     key={idx} 
-                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
-                      r.isOther 
-                        ? 'bg-slate-100/90 border-slate-200 text-slate-700 font-semibold' 
-                        : 'bg-slate-50 border-slate-100'
-                    }`}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs hover:bg-slate-100/80 transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`w-5 h-5 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0 ${
-                        r.isOther ? 'bg-slate-300 text-slate-700' : 'bg-navy-100 text-navy-800'
-                      }`}>
-                        {r.isOther ? '+' : idx + 1}
+                      <span className="w-5 h-5 rounded-full bg-navy-100 text-navy-800 font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {idx + 1}
                       </span>
-                      <span className="font-bold text-slate-800 truncate">{r.route}</span>
+                      <span className="font-bold text-slate-800 truncate" title={r.route}>{r.route}</span>
                     </div>
                     <div className="text-right shrink-0 ml-3">
                       <div className="font-extrabold text-brand-700">{r.count} solicitações</div>
@@ -520,6 +524,33 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
                   </div>
                 );
               })
+            )}
+
+            {!showAllRoutes && metrics.otherRoutesCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAllRoutes(true)}
+                className="w-full py-2.5 px-3 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-900 border border-brand-200/80 text-xs font-bold transition-all flex items-center justify-between shadow-2xs group cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-brand-600 text-white font-bold text-[10px] flex items-center justify-center">
+                    +
+                  </span>
+                  <span>Ver todas as {metrics.allRoutes.length} rotas por extenso (+{metrics.otherCount} em {metrics.otherRoutesCount} trajetos)</span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-brand-700 group-hover:translate-y-0.5 transition-transform shrink-0" />
+              </button>
+            )}
+
+            {showAllRoutes && metrics.allRoutes.length > 6 && (
+              <button
+                type="button"
+                onClick={() => setShowAllRoutes(false)}
+                className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ChevronUp className="w-4 h-4" />
+                <span>Recolher para Top 6 Rotas</span>
+              </button>
             )}
           </div>
         </div>
