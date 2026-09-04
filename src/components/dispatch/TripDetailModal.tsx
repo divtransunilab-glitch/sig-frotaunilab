@@ -24,7 +24,8 @@ import {
   ShieldAlert,
   FileCheck2,
   Phone,
-  Printer
+  Printer,
+  Trash2
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -38,6 +39,7 @@ interface TripDetailModalProps {
   onOpenReject: (trip: TripRequest) => void;
   onOpenChangeDate: (trip: TripRequest) => void;
   onOpenTrafficOrder?: (trip: TripRequest) => void;
+  onOpenDelete?: (trip: TripRequest) => void;
 }
 
 export const TripDetailModal: React.FC<TripDetailModalProps> = ({
@@ -48,6 +50,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   onOpenReject,
   onOpenChangeDate,
   onOpenTrafficOrder,
+  onOpenDelete,
 }) => {
   if (!isOpen || !trip) return null;
 
@@ -487,6 +490,20 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
                 className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
               >
                 Indeferir
+              </button>
+            )}
+
+            {onOpenDelete && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenDelete(trip);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 flex items-center gap-1.5 transition-colors"
+                title="Excluir solicitação definitivamente"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir</span>
               </button>
             )}
 

@@ -585,6 +585,18 @@ export class TripService {
     await this.syncTripsToSupabase(uniqueNew);
   }
 
+  static async deleteTrip(tripId: string): Promise<boolean> {
+    const existing = this.loadTrips();
+    const updated = existing.filter((t) => t.id !== tripId);
+    localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(updated));
+    try {
+      await supabase.from('trip_requests').delete().eq('id', tripId);
+    } catch (e) {
+      console.warn('Erro ao excluir solicitação no Supabase:', e);
+    }
+    return true;
+  }
+
   static async clearAllTrips(): Promise<void> {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify([]));
     try {

@@ -17,7 +17,8 @@ import {
   Printer,
   Sparkles,
   Car,
-  TrendingDown
+  TrendingDown,
+  Trash2
 } from 'lucide-react';
 import { format, parseISO, getMonth, getYear, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -32,6 +33,7 @@ interface DispatchQueueProps {
   onOpenDispatchModal: (trip: TripRequest) => void;
   onOpenRejectModal: (trip: TripRequest) => void;
   onOpenChangeDateModal?: (trip: TripRequest) => void;
+  onOpenDeleteModal?: (trip: TripRequest) => void;
   onOpenNewTripModal: () => void;
   onOpenImportModal?: () => void;
   onOpenTrafficOrderModal?: (trip: TripRequest) => void;
@@ -48,6 +50,7 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
   onOpenDispatchModal,
   onOpenRejectModal,
   onOpenChangeDateModal,
+  onOpenDeleteModal,
   onOpenNewTripModal,
   onOpenImportModal,
   onOpenTrafficOrderModal,
@@ -725,6 +728,16 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
                             >
                               <XCircle className="w-3.5 h-3.5" />
                             </button>
+
+                            {onOpenDeleteModal && (
+                              <button
+                                onClick={() => onOpenDeleteModal(trip)}
+                                title="Excluir Solicitação (Exige Senha)"
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
 
@@ -872,6 +885,16 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
                             >
                               <XCircle className="w-3.5 h-3.5" />
                             </button>
+
+                            {onOpenDeleteModal && (
+                              <button
+                                onClick={() => onOpenDeleteModal(trip)}
+                                title="Excluir Solicitação (Exige Senha)"
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

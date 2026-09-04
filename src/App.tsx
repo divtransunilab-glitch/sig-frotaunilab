@@ -14,6 +14,7 @@ import { NewTripModal } from './components/dispatch/NewTripModal';
 import { TripDetailModal } from './components/dispatch/TripDetailModal';
 import { RejectTripModal } from './components/dispatch/RejectTripModal';
 import { ChangeDateModal } from './components/dispatch/ChangeDateModal';
+import { DeleteTripModal } from './components/dispatch/DeleteTripModal';
 import { ImportSpreadsheetModal } from './components/dispatch/ImportSpreadsheetModal';
 import { TrafficOrderModal } from './components/dispatch/TrafficOrderModal';
 import { TripGroupingModal } from './components/dispatch/TripGroupingModal';
@@ -41,6 +42,7 @@ export function App() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isTrafficOrderModalOpen, setIsTrafficOrderModalOpen] = useState(false);
   const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
@@ -148,6 +150,28 @@ export function App() {
   const handleOpenChangeDateModal = (trip: TripRequest) => {
     setSelectedTrip(trip);
     setIsChangeDateModalOpen(true);
+  };
+
+  const handleOpenDeleteModal = (trip: TripRequest) => {
+    setSelectedTrip(trip);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDeleteTrip = async (tripId: string) => {
+    const tripToDelete = trips.find((t) => t.id === tripId) || selectedTrip;
+    await TripService.deleteTrip(tripId);
+    loadTrips();
+
+    AuditService.logEvent({
+      action: 'Cancelamento de Demanda',
+      process_number: tripToDelete?.process_number || 'Sem Processo',
+      target_id: tripId,
+      entity_type: 'Viagem',
+      compliance_status: 'Alerta',
+      details: `Solicitação ${tripToDelete?.process_number || tripId} (${tripToDelete?.requester_name || ''}) foi excluída definitivamente pelo operador.`,
+    });
+
+    showToast(`Solicitação ${tripToDelete?.process_number || ''} excluída definitivamente!`, 'info');
   };
 
   const handleOpenTrafficOrderModal = (trip: TripRequest) => {
@@ -350,6 +374,7 @@ export function App() {
               onSelectTripDetail={handleSelectTripDetail}
               onOpenRejectModal={handleOpenRejectModal}
               onOpenChangeDateModal={handleOpenChangeDateModal}
+              onOpenDeleteModal={handleOpenDeleteModal}
               onOpenImportModal={() => setIsImportModalOpen(true)}
               onOpenTrafficOrderModal={handleOpenTrafficOrderModal}
               onOpenGroupingModal={() => setIsGroupingModalOpen(true)}
@@ -440,6 +465,7 @@ export function App() {
         onOpenReject={handleOpenRejectModal}
         onOpenChangeDate={handleOpenChangeDateModal}
         onOpenTrafficOrder={handleOpenTrafficOrderModal}
+        onOpenDelete={handleOpenDeleteModal}
       />
 
       <RejectTripModal
@@ -454,6 +480,13 @@ export function App() {
         isOpen={isChangeDateModalOpen}
         onClose={() => setIsChangeDateModalOpen(false)}
         onConfirmChangeDate={handleConfirmChangeDate}
+      />
+
+      <DeleteTripModal
+        trip={selectedTrip}
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirmDelete={handleConfirmDeleteTrip}
       />
 
       {/* Import Spreadsheet Modal */}
