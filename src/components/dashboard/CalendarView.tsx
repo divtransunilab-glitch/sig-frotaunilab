@@ -40,7 +40,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onOpenDispatchModal,
 }) => {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [viewMode, setViewMode] = useState<'vehicles' | 'drivers' | 'calendar'>('vehicles');
+  const [viewMode, setViewMode] = useState<'calendar' | 'vehicles' | 'drivers'>('calendar');
 
   const vehicles = FleetService.getVehicles();
   const drivers = FleetService.getDrivers();
@@ -188,8 +188,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* View Mode Toggle */}
           <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200">
             <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-navy-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5 text-purple-600" />
+              <span>Grid Mensal</span>
+            </button>
+
+            <button
               onClick={() => setViewMode('vehicles')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'vehicles'
                   ? 'bg-white text-navy-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -201,7 +213,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
             <button
               onClick={() => setViewMode('drivers')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'drivers'
                   ? 'bg-white text-navy-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -209,18 +221,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             >
               <User className="w-3.5 h-3.5 text-blue-600" />
               <span>Por Motorista</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('calendar')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'calendar'
-                  ? 'bg-white text-navy-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CalendarIcon className="w-3.5 h-3.5 text-purple-600" />
-              <span>Grid Mensal</span>
             </button>
           </div>
 
