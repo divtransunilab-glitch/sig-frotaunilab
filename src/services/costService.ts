@@ -210,7 +210,7 @@ export class CostService {
     const operationalCostPerKm = Number(vehicle.operational_cost_per_km !== undefined ? vehicle.operational_cost_per_km : prices.maintenancePerKm) || 0.45;
 
     const fuelCostPerKm = avgKmPerLiter > 0 ? fuelPricePerLiter / avgKmPerLiter : 0;
-    const totalCostPerKm = totalKm > 0 ? totalCost / km : fuelCostPerKm + operationalCostPerKm;
+    const totalCostPerKm = totalKm > 0 ? totalCost / totalKm : fuelCostPerKm + operationalCostPerKm;
 
     return {
       vehicle,
