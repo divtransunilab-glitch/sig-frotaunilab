@@ -329,6 +329,9 @@ export function App() {
         setActiveTab={setActiveTab}
         pendingCount={pendingCount}
         urgentCount={urgentCount}
+        trips={trips}
+        onSelectTripDetail={handleSelectTripDetail}
+        onOpenDispatchModal={handleOpenDispatchModal}
         onResetData={handleResetData}
         onOpenImportModal={() => setIsImportModalOpen(true)}
         onOpenChangePasswordModal={() => setIsChangePasswordModalOpen(true)}
