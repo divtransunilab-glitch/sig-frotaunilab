@@ -614,7 +614,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   {/* Cidades Secundárias / Paradas no Percurso */}
                   <div>
                     <label className="block font-bold text-amber-950 mb-1">
-                      Paradas / Cidades Secundárias no Percurso
+                      Paradas / Cidades Secundárias no Percurso <span className="text-amber-700 font-normal">(Opcional)</span>
                     </label>
                     <select
                       className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-amber-500 focus:outline-hidden"
@@ -626,7 +626,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                         }
                       }}
                     >
-                      <option value="">+ Adicionar Cidade Secundária...</option>
+                      <option value="">+ Adicionar Cidade Secundária (Opcional)...</option>
                       {cities
                         .filter((c) => c.id !== originCityId && c.id !== destinationCityId && !intermediateCities.includes(c.id))
                         .map((c) => (
@@ -666,7 +666,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   {/* KM de Deslocamento Urbano / Local Extra */}
                   <div>
                     <label className="block font-bold text-amber-950 mb-1">
-                      Deslocamento Urbano/Local Extra (KM)
+                      Deslocamento Urbano/Local Extra em KM <span className="text-amber-700 font-normal">(Opcional)</span>
                     </label>
                     <input
                       type="number"
