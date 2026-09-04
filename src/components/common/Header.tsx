@@ -7,7 +7,8 @@ import {
   UserCheck, 
   LogOut, 
   Building2,
-  Calendar
+  Calendar,
+  KeyRound
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -20,6 +21,7 @@ interface HeaderProps {
   userName?: string;
   onResetData?: () => void;
   onOpenImportModal?: () => void;
+  onOpenChangePasswordModal?: () => void;
   onLogout?: () => void;
 }
 
@@ -30,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   urgentCount,
   userName,
   onOpenImportModal,
+  onOpenChangePasswordModal,
   onLogout,
 }) => {
   const currentDateFormatted = format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR });
@@ -124,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* User Avatar & Logout */}
+            {/* User Avatar, Password Change & Logout */}
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-navy-800 text-white flex items-center justify-center font-bold text-xs shadow-xs uppercase">
                 {initials}
@@ -135,6 +138,17 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <div className="text-[10px] text-slate-500 font-medium">DIVTRANS / PROADI</div>
               </div>
+
+              {onOpenChangePasswordModal && (
+                <button
+                  onClick={onOpenChangePasswordModal}
+                  title="Alterar sua senha de acesso no Supabase"
+                  className="ml-1 p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
+                >
+                  <KeyRound className="w-4 h-4 text-brand-600" />
+                  <span className="hidden sm:inline text-brand-800">Alterar Senha</span>
+                </button>
+              )}
 
               {onLogout && (
                 <button

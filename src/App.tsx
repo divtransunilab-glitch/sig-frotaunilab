@@ -17,6 +17,7 @@ import { ChangeDateModal } from './components/dispatch/ChangeDateModal';
 import { ImportSpreadsheetModal } from './components/dispatch/ImportSpreadsheetModal';
 import { TrafficOrderModal } from './components/dispatch/TrafficOrderModal';
 import { TripGroupingModal } from './components/dispatch/TripGroupingModal';
+import { ChangePasswordModal } from './components/common/ChangePasswordModal';
 import { DistanceMatrixView } from './components/matrix/DistanceMatrixView';
 import { TravelReportView } from './components/postTrip/TravelReportView';
 import { FleetManagement } from './components/fleet/FleetManagement';
@@ -43,6 +44,7 @@ export function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isTrafficOrderModalOpen, setIsTrafficOrderModalOpen] = useState(false);
   const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
 
   // Toast / Notification
@@ -279,7 +281,7 @@ export function App() {
         </div>
       )}
 
-      {/* Main Header with Logout option */}
+      {/* Main Header with Logout & Password Change option */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -287,6 +289,7 @@ export function App() {
         urgentCount={urgentCount}
         onResetData={handleResetData}
         onOpenImportModal={() => setIsImportModalOpen(true)}
+        onOpenChangePasswordModal={() => setIsChangePasswordModalOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -456,6 +459,13 @@ export function App() {
         trips={trips}
         onGroupDispatched={handleGroupDispatched}
         onSelectTripDetail={handleSelectTripDetail}
+      />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        onSuccess={(msg) => showToast(msg, 'success')}
       />
 
     </div>
