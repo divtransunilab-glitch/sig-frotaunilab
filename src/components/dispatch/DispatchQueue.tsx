@@ -18,7 +18,10 @@ import {
   Sparkles,
   Car,
   TrendingDown,
-  Trash2
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { format, parseISO, getMonth, getYear, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -93,22 +96,22 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
     return map;
   }, [trips]);
 
-  // Lista dos 12 meses do ano para as abas da planilha
+  // Lista dos 12 meses do ano para o botão de lista otimizado
   const monthsList = useMemo(() => {
     const defaultMonths = [
-      { id: 'ALL', label: 'Todas as Demandas', monthIndex: -1 },
-      { id: '01-2026', label: '01-2026 (Jan)', monthIndex: 0 },
-      { id: '02-2026', label: '02-2026 (Fev)', monthIndex: 1 },
-      { id: '03-2026', label: '03-2026 (Mar)', monthIndex: 2 },
-      { id: '04-2026', label: '04-2026 (Abr)', monthIndex: 3 },
-      { id: '05-2026', label: '05-2026 (Mai)', monthIndex: 4 },
-      { id: '06-2026', label: '06-2026 (Jun)', monthIndex: 5 },
-      { id: '07-2026', label: '07-2026 (Jul)', monthIndex: 6 },
-      { id: '08-2026', label: '08-2026 (Ago)', monthIndex: 7 },
-      { id: '09-2026', label: '09-2026 (Set)', monthIndex: 8 },
-      { id: '10-2026', label: '10-2026 (Out)', monthIndex: 9 },
-      { id: '11-2026', label: '11-2026 (Nov)', monthIndex: 10 },
-      { id: '12-2026', label: '12-2026 (Dez)', monthIndex: 11 },
+      { id: 'ALL', label: 'Todas as Demandas (Consolidado Anual)', monthIndex: -1 },
+      { id: '01-2026', label: '01-2026 (Janeiro)', monthIndex: 0 },
+      { id: '02-2026', label: '02-2026 (Fevereiro)', monthIndex: 1 },
+      { id: '03-2026', label: '03-2026 (Março)', monthIndex: 2 },
+      { id: '04-2026', label: '04-2026 (Abril)', monthIndex: 3 },
+      { id: '05-2026', label: '05-2026 (Maio)', monthIndex: 4 },
+      { id: '06-2026', label: '06-2026 (Junho)', monthIndex: 5 },
+      { id: '07-2026', label: '07-2026 (Julho)', monthIndex: 6 },
+      { id: '08-2026', label: '08-2026 (Agosto)', monthIndex: 7 },
+      { id: '09-2026', label: '09-2026 (Setembro)', monthIndex: 8 },
+      { id: '10-2026', label: '10-2026 (Outubro)', monthIndex: 9 },
+      { id: '11-2026', label: '11-2026 (Novembro)', monthIndex: 10 },
+      { id: '12-2026', label: '12-2026 (Dezembro)', monthIndex: 11 },
     ];
 
     const extraMonthKeys = Object.keys(countByMonth).filter(
@@ -125,6 +128,23 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
 
     return defaultMonths;
   }, [countByMonth]);
+
+  // Helpers de navegação rápida entre meses
+  const currentMonthIndex = useMemo(() => {
+    return monthsList.findIndex((m) => m.id === selectedMonthTab);
+  }, [monthsList, selectedMonthTab]);
+
+  const handlePrevMonth = () => {
+    if (currentMonthIndex > 0) {
+      setSelectedMonthTab(monthsList[currentMonthIndex - 1].id);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonthIndex !== -1 && currentMonthIndex < monthsList.length - 1) {
+      setSelectedMonthTab(monthsList[currentMonthIndex + 1].id);
+    }
+  };
 
   const macroUnitsList: MacroUnit[] = [
     'ICS', 'IDR', 'PROADI', 'PROPAE', 'ICEN', 'GR', 'PROEX', 'IH', 'PROINTER', 'ICSA', 'SECOM', 'PROPPG', 'DTI'
@@ -295,19 +315,62 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
         </div>
       </div>
 
-      {/* Seletor de Abas por Mês da Planilha (01-2026, 02-2026 ... 12-2026 + Consolidado Geral) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-2 sm:p-3">
-        <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-            <Calendar className="w-4 h-4 text-brand-600" />
-            <span>Abas Mensais da Planilha Oficial (2026):</span>
+      {/* Seletor Otimizado de Mês da Planilha em Botão de Lista / Dropdown com Navegação */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100/90 px-3 py-2 rounded-xl border border-slate-200/90">
+              <Calendar className="w-4 h-4 text-brand-600 shrink-0" />
+              <span>Aba Mensal da Planilha:</span>
+            </div>
+
+            {/* Botão de Lista / Dropdown de Seleção do Mês + Navegação por Setas */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                disabled={currentMonthIndex <= 0}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Mês Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="relative">
+                <select
+                  value={selectedMonthTab}
+                  onChange={(e) => setSelectedMonthTab(e.target.value)}
+                  className="appearance-none bg-brand-50/70 hover:bg-brand-100/70 border border-brand-200 text-brand-950 font-bold text-xs rounded-xl pl-3.5 pr-9 py-2 focus:outline-hidden focus:ring-2 focus:ring-brand-500 shadow-xs cursor-pointer transition-colors"
+                >
+                  {monthsList.map((tab) => {
+                    const count = countByMonth[tab.id] || 0;
+                    return (
+                      <option key={tab.id} value={tab.id}>
+                        {tab.label} — [{count} {count === 1 ? 'solicitação' : 'solicitações'}]
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronDown className="w-4 h-4 text-brand-700 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                disabled={currentMonthIndex === -1 || currentMonthIndex >= monthsList.length - 1}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Próximo Mês"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Alternador de Modo de Visualização */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
             <button
               onClick={() => setViewMode('compact')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                 viewMode === 'compact'
                   ? 'bg-white text-navy-950 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -317,7 +380,7 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
             </button>
             <button
               onClick={() => setViewMode('full')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                 viewMode === 'full'
                   ? 'bg-white text-navy-950 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -327,36 +390,6 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
               <span>Planilha Completa</span>
             </button>
           </div>
-        </div>
-
-        {/* Abas Horizontais com Scroll Suave */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-          {monthsList.map((tab) => {
-            const isSelected = selectedMonthTab === tab.id;
-            const count = countByMonth[tab.id] || 0;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setSelectedMonthTab(tab.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 shrink-0 ${
-                  isSelected
-                    ? 'bg-brand-600 text-white shadow-xs scale-102'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isSelected
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
         </div>
       </div>
 
