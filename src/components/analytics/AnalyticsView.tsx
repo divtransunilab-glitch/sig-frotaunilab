@@ -61,8 +61,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   // Overrides locais por veículo (Permite editar Km/L e R$/km de manutenção diretamente na tabela)
   const [vehicleOverrides, setVehicleOverrides] = useState<Record<string, { avg_km_per_liter?: number; operational_cost_per_km?: number }>>({});
 
-  // Modo do Heatmap: 'slots' (Faixas), 'hours' (05h-22h), 'shifts' (Turnos)
-  const [heatmapMode, setHeatmapMode] = useState<'slots' | 'hours' | 'shifts'>('slots');
+  // Modo do Heatmap: 'hours' (05h-22h por padrão), 'slots' (Faixas Operacionais), 'shifts' (Turnos)
+  const [heatmapMode, setHeatmapMode] = useState<'hours' | 'slots' | 'shifts'>('hours');
 
   // Célula selecionada/hover do Heatmap para detalhamento
   const [selectedCellTrips, setSelectedCellTrips] = useState<{ label: string; trips: TripRequest[] } | null>(null);
@@ -307,7 +307,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     return Object.values(map).sort((a, b) => b.count - a.count);
   }, [tripsCostData, drivers]);
 
-  // --- MATRIZES DE HEATMAP OPERACIONAL (Regra de Negócio Atualizada) ---
+  // --- MATRIZES DE HEATMAP OPERACIONAL ---
   const dayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
   // Modo 1: Faixas de Horários reais de operação da UNILAB (05h às 24h)
@@ -346,12 +346,27 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     return 3; // Madrugada (00h às 04:59)
   };
 
-  // Heatmap Data Structures
-  const { slotMatrix, slotTripsMatrix, hourMatrix, shiftMatrix, peakDay, peakHourSlot, hourlyDistribution } = useMemo(() => {
+  // Heatmap Data Structures (inclui matrizes de viagens para clique e modal interativo)
+  const { 
+    slotMatrix, 
+    slotTripsMatrix, 
+    hourMatrix, 
+    hourTripsMatrix, 
+    shiftMatrix, 
+    shiftTripsMatrix, 
+    peakDay, 
+    peakHourSlot, 
+    hourlyDistribution 
+  } = useMemo(() => {
     const sMatrix: number[][] = Array(7).fill(0).map(() => Array(8).fill(0));
     const sTrips: TripRequest[][][] = Array(7).fill(null).map(() => Array(8).fill(null).map(() => []));
+    
     const hMatrix: number[][] = Array(7).fill(0).map(() => Array(18).fill(0));
+    const hTrips: TripRequest[][][] = Array(7).fill(null).map(() => Array(18).fill(null).map(() => []));
+    
     const shMatrix: number[][] = Array(7).fill(0).map(() => Array(4).fill(0));
+    const shTrips: TripRequest[][][] = Array(7).fill(null).map(() => Array(4).fill(null).map(() => []));
+    
     const hDist: Record<number, number> = {};
 
     individualHours.forEach((h) => { hDist[h] = 0; });
@@ -362,7 +377,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         const day = getDay(date);
         const hour = date.getHours();
 
-        // Slot Matrix (2h)
+        // Slot Matrix (Faixas Operacionais)
         const slotIdx = getTimeSlotIndex(hour);
         sMatrix[day][slotIdx] += 1;
         sTrips[day][slotIdx].push(t);
@@ -371,12 +386,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         if (hour >= 5 && hour <= 22) {
           const hIdx = hour - 5;
           hMatrix[day][hIdx] += 1;
+          hTrips[day][hIdx].push(t);
           hDist[hour] = (hDist[hour] || 0) + 1;
         }
 
-        // Shift Matrix
+        // Shift Matrix (Turnos)
         const shIdx = getShiftIndex(hour);
         shMatrix[day][shIdx] += 1;
+        shTrips[day][shIdx].push(t);
       } catch {
         // ignore
       }
@@ -409,7 +426,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       slotMatrix: sMatrix,
       slotTripsMatrix: sTrips,
       hourMatrix: hMatrix,
+      hourTripsMatrix: hTrips,
       shiftMatrix: shMatrix,
+      shiftTripsMatrix: shTrips,
       peakDay: { name: dayLabels[maxDayIdx], count: maxDayCount },
       peakHourSlot: { label: timeSlotLabels[maxSlotIdx], count: maxSlotCount },
       hourlyDistribution: hDist,
@@ -740,17 +759,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 </div>
               </div>
 
-              {/* Switcher de Visualização do Heatmap */}
+              {/* Switcher de Visualização do Heatmap (Ordem Solicitada: 1º Horas, 2º Faixas, 3º Turnos) */}
               <div className="flex items-center gap-2">
                 <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 text-xs">
-                  <button
-                    onClick={() => setHeatmapMode('slots')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                      heatmapMode === 'slots' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Faixas Operacionais
-                  </button>
                   <button
                     onClick={() => setHeatmapMode('hours')}
                     className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
@@ -758,6 +769,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     }`}
                   >
                     Horas (05h às 22h)
+                  </button>
+                  <button
+                    onClick={() => setHeatmapMode('slots')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      heatmapMode === 'slots' ? 'bg-white text-navy-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Faixas Operacionais
                   </button>
                   <button
                     onClick={() => setHeatmapMode('shifts')}
@@ -793,7 +812,61 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             </div>
 
-            {/* 1. MODO FAIXAS OPERACIONAIS (DEFAULT) */}
+            {/* 1. MODO HORAS CHEIAS (05H ÀS 22H) — MODO PADRÃO (1ª ABA) */}
+            {heatmapMode === 'hours' && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-center border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                      <th className="py-2.5 px-3 text-left min-w-[90px]">Dia</th>
+                      {individualHours.map((h) => (
+                        <th key={h} className="py-2.5 px-1.5 text-[11px] font-bold">{h}h</th>
+                      ))}
+                      <th className="py-2.5 px-2 text-right pr-3 font-extrabold text-navy-950">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dayLabels.map((dayName, dayIdx) => {
+                      const dayTotal = hourMatrix[dayIdx].reduce((a, b) => a + b, 0);
+                      return (
+                        <tr key={dayIdx} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-2 px-3 text-left font-bold text-slate-800">
+                            {dayName}
+                          </td>
+                          {hourMatrix[dayIdx].map((val, hIdx) => {
+                            const h = individualHours[hIdx];
+                            const cellTrips = hourTripsMatrix[dayIdx][hIdx];
+                            return (
+                              <td key={hIdx} className="p-1">
+                                <button
+                                  onClick={() => {
+                                    if (val > 0) {
+                                      setSelectedCellTrips({
+                                        label: `${dayName} às ${h}h:00`,
+                                        trips: cellTrips,
+                                      });
+                                    }
+                                  }}
+                                  className={`w-full py-1.5 px-1 rounded-lg border text-center text-[11px] font-bold transition-all cursor-pointer ${getHeatmapColor(val)}`}
+                                  title={val > 0 ? `${val} viagens às ${h}h:00. Clique para ver detalhes.` : 'Sem viagens'}
+                                >
+                                  {val}
+                                </button>
+                              </td>
+                            );
+                          })}
+                          <td className="py-2 px-2 pr-3 text-right font-extrabold text-navy-950">
+                            {dayTotal}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 2. MODO FAIXAS OPERACIONAIS (2ª ABA) */}
             {heatmapMode === 'slots' && (
               <div className="overflow-x-auto">
                 <table className="w-full text-center border-collapse text-xs">
@@ -846,46 +919,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             )}
 
-            {/* 2. MODO HORAS CHEIAS (05H ÀS 22H) */}
-            {heatmapMode === 'hours' && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-center border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                      <th className="py-2.5 px-3 text-left min-w-[90px]">Dia</th>
-                      {individualHours.map((h) => (
-                        <th key={h} className="py-2.5 px-1.5 text-[11px] font-bold">{h}h</th>
-                      ))}
-                      <th className="py-2.5 px-2 text-right pr-3 font-extrabold text-navy-950">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {dayLabels.map((dayName, dayIdx) => {
-                      const dayTotal = hourMatrix[dayIdx].reduce((a, b) => a + b, 0);
-                      return (
-                        <tr key={dayIdx} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="py-2 px-3 text-left font-bold text-slate-800">
-                            {dayName}
-                          </td>
-                          {hourMatrix[dayIdx].map((val, hIdx) => (
-                            <td key={hIdx} className="p-1">
-                              <div className={`py-1.5 px-1 rounded-lg border text-center text-[11px] transition-all ${getHeatmapColor(val)}`}>
-                                {val}
-                              </div>
-                            </td>
-                          ))}
-                          <td className="py-2 px-2 pr-3 text-right font-extrabold text-navy-950">
-                            {dayTotal}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* 3. MODO TURNOS */}
+            {/* 3. MODO TURNOS (3ª ABA) */}
             {heatmapMode === 'shifts' && (
               <div className="overflow-x-auto">
                 <table className="w-full text-center border-collapse text-xs">
@@ -906,13 +940,27 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                           <td className="py-3 px-4 text-left font-bold text-slate-800">
                             {dayName}
                           </td>
-                          {shiftMatrix[dayIdx].map((val, shiftIdx) => (
-                            <td key={shiftIdx} className="p-2">
-                              <div className={`py-2 px-3 rounded-xl border text-center transition-all ${getHeatmapColor(val)}`}>
-                                {val} {val === 1 ? 'viagem' : 'viagens'}
-                              </div>
-                            </td>
-                          ))}
+                          {shiftMatrix[dayIdx].map((val, shiftIdx) => {
+                            const cellTrips = shiftTripsMatrix[dayIdx][shiftIdx];
+                            return (
+                              <td key={shiftIdx} className="p-2">
+                                <button
+                                  onClick={() => {
+                                    if (val > 0) {
+                                      setSelectedCellTrips({
+                                        label: `${dayName} - Turno: ${shiftLabels[shiftIdx]}`,
+                                        trips: cellTrips,
+                                      });
+                                    }
+                                  }}
+                                  className={`w-full py-2 px-3 rounded-xl border text-center transition-all cursor-pointer ${getHeatmapColor(val)}`}
+                                  title={val > 0 ? `${val} viagens. Clique para ver detalhes.` : 'Sem viagens'}
+                                >
+                                  <span className="block font-bold">{val} {val === 1 ? 'viagem' : 'viagens'}</span>
+                                </button>
+                              </td>
+                            );
+                          })}
                           <td className="py-3 px-3 pr-4 text-right font-extrabold text-navy-950 text-sm">
                             {dayTotal}
                           </td>
