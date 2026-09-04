@@ -209,21 +209,31 @@ export class ImportService {
 
     if (val instanceof Date && isValid(val) && !isNaN(val.getTime())) {
       try {
-        const h = val.getUTCHours() > 0 ? val.getUTCHours() : val.getHours();
-        const m = val.getUTCMinutes() > 0 ? val.getUTCMinutes() : val.getMinutes();
-        if (h === 0 && m === 0) return '08:00';
+        const h = val.getUTCHours();
+        const m = val.getUTCMinutes();
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
       } catch {
         return '08:00';
       }
     }
 
-    // Se for fração de dia no Excel (ex: 0.3125 = 07:30)
-    if (typeof val === 'number' && val >= 0 && val < 1) {
-      const totalMinutes = Math.round(val * 24 * 60);
-      const hours = Math.floor(totalMinutes / 60) % 24;
-      const minutes = totalMinutes % 60;
-      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    // Se for número no Excel (fração de dia ou serial completo)
+    if (typeof val === 'number') {
+      if (val >= 0 && val < 1) {
+        const totalMinutes = Math.round(val * 24 * 60);
+        const hours = Math.floor(totalMinutes / 60) % 24;
+        const minutes = totalMinutes % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      } else if (val >= 1) {
+        try {
+          const dateObj = XLSX.SSF.parse_date_code(val);
+          if (dateObj) {
+            const h = dateObj.H || 0;
+            const m = dateObj.M || 0;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          }
+        } catch {}
+      }
     }
 
     const str = String(val).trim();
