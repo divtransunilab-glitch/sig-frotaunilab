@@ -582,23 +582,25 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               Finalidade da Demanda
             </h3>
             <div className="space-y-2 pt-1">
-              {Object.entries(metrics.byActivity).map(([act, count]) => {
-                const pct = Math.round((count / (metrics.totalRequests || 1)) * 100);
-                return (
-                  <div key={act} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-700">{act}</span>
-                      <span className="text-slate-500 font-semibold">{count}</span>
+              {Object.entries(metrics.byActivity)
+                .sort((a, b) => b[1] - a[1])
+                .map(([act, count]) => {
+                  const pct = Math.round((count / (metrics.totalRequests || 1)) * 100);
+                  return (
+                    <div key={act} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-slate-700">{act}</span>
+                        <span className="text-slate-500 font-semibold">{count}</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-navy-700 h-1.5 rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="bg-navy-700 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
 

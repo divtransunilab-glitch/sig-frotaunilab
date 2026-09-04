@@ -427,26 +427,28 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
             {Object.entries(metrics.byActivity).length === 0 ? (
               <div className="text-center py-6 text-slate-400 text-xs">Nenhum dado no período</div>
             ) : (
-              Object.entries(metrics.byActivity).map(([act, count]) => {
-                const pct = metrics.total > 0 ? Math.round((count / metrics.total) * 100) : 0;
-                return (
-                  <div key={act} className="space-y-1.5 p-2.5 rounded-xl bg-slate-50/70 border border-slate-100">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 font-bold text-slate-800">
-                        {getActivityIcon(act)}
-                        <span>{act}</span>
+              Object.entries(metrics.byActivity)
+                .sort((a, b) => b[1] - a[1])
+                .map(([act, count]) => {
+                  const pct = metrics.total > 0 ? Math.round((count / metrics.total) * 100) : 0;
+                  return (
+                    <div key={act} className="space-y-1.5 p-2.5 rounded-xl bg-slate-50/70 border border-slate-100">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 font-bold text-slate-800">
+                          {getActivityIcon(act)}
+                          <span>{act}</span>
+                        </div>
+                        <span className="text-slate-600 font-bold">{count} ({pct}%)</span>
                       </div>
-                      <span className="text-slate-600 font-bold">{count} ({pct}%)</span>
+                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-brand-600 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-brand-600 h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })
             )}
           </div>
         </div>
