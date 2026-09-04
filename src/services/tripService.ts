@@ -476,29 +476,79 @@ export class TripService {
     try {
       if (!trips || trips.length === 0) return;
 
-      const sanitized = trips.map((t, idx) => ({
-        ...t,
-        id: t.id || `trip-imp-${Date.now()}-${idx}`,
-        process_number: t.process_number || `PROC-${Date.now()}-${idx}`,
-        activity_type: t.activity_type || 'Graduação',
-        requester_name: t.requester_name || 'Solicitante Institucional',
-        macro_unit: t.macro_unit || 'IDR',
-        requesting_unit: t.requesting_unit || 'Unidade Solicitante',
-        origin_city_id: t.origin_city_id || 'city-1',
-        destination_city_id: t.destination_city_id || 'city-3',
-        departure_datetime: t.departure_datetime || new Date().toISOString(),
-        return_datetime: t.return_datetime || new Date().toISOString(),
-        passenger_count: t.passenger_count || 1,
-        status: t.status || 'Pendente de Análise',
-        received_at: t.received_at || new Date().toISOString()
-      }));
+      // Manter controle de números de processo para evitar colisão de UNIQUE constraint no Supabase
+      const seenProcessNumbers = new Set<string>();
+
+      const sanitized = trips.map((t, idx) => {
+        let rawProcess = (t.process_number || `PROC-${Date.now()}-${idx}`).trim();
+        if (rawProcess.length > 45) {
+          rawProcess = rawProcess.substring(0, 45);
+        }
+        let finalProcess = rawProcess;
+        let dupCount = 1;
+        while (seenProcessNumbers.has(finalProcess.toLowerCase())) {
+          dupCount++;
+          finalProcess = `${rawProcess}-${dupCount}`;
+        }
+        seenProcessNumbers.add(finalProcess.toLowerCase());
+
+        const validStatuses = [
+          'Confirmado ao Demandante',
+          'Indeferido',
+          'Cancelado pelo Demandante',
+          'Cancelado pela Unidade Executante',
+          'Alterado a Data da Demanda',
+          'Pendente de Análise'
+        ];
+        const status = validStatuses.includes(t.status) ? t.status : 'Pendente de Análise';
+
+        const validDeadlines = ['Dentro do Prazo', 'Fora do Prazo'];
+        const status_deadline = validDeadlines.includes(t.status_deadline) ? t.status_deadline : 'Dentro do Prazo';
+
+        const validActivities = ['Graduação', 'Pós Graduação', 'Pesquisa', 'Extensão', 'Administrativo'];
+        const activity_type = validActivities.includes(t.activity_type) ? t.activity_type : 'Graduação';
+
+        const validReportStatuses = ['Finalizado no Sistema', 'Aguardando Envio da Contratada', 'Aguardando a Apreciação do Gerente', 'Não Aplicável'];
+        const travel_report_status = validReportStatuses.includes(t.travel_report_status || '') ? t.travel_report_status : 'Não Aplicável';
+
+        return {
+          ...t,
+          id: t.id || `trip-imp-${Date.now()}-${idx}`,
+          process_number: finalProcess,
+          status_deadline,
+          activity_type,
+          requester_name: t.requester_name || 'Solicitante Institucional',
+          requester_email: t.requester_email || 'solicitante@unilab.edu.br',
+          macro_unit: t.macro_unit || 'IDR',
+          requesting_unit: t.requesting_unit || 'Unidade Solicitante',
+          origin_city_id: t.origin_city_id || 'city-71',
+          destination_city_id: t.destination_city_id || 'city-27',
+          departure_datetime: t.departure_datetime || new Date().toISOString(),
+          return_datetime: t.return_datetime || new Date().toISOString(),
+          passenger_count: Math.max(1, Number(t.passenger_count) || 1),
+          estimated_km: Math.max(0, Number(t.estimated_km) || 0),
+          status,
+          travel_report_status,
+          received_at: t.received_at || new Date().toISOString(),
+          allocated_contractor_id: t.allocated_contractor_id || null,
+          allocated_driver_id: t.allocated_driver_id || null,
+          allocated_vehicle_id: t.allocated_vehicle_id || null,
+        };
+      });
 
       const BATCH_SIZE = 50;
       for (let i = 0; i < sanitized.length; i += BATCH_SIZE) {
         const batch = sanitized.slice(i, i + BATCH_SIZE);
         const { error } = await supabase.from('trip_requests').upsert(batch);
         if (error) {
-          console.error('Erro ao enviar lote para o Supabase:', error.message);
+          console.error(`Erro ao enviar lote ${Math.floor(i / BATCH_SIZE) + 1} para o Supabase:`, error.message);
+          // Tenta envio individual item a item caso o lote completo sofra rejeição
+          for (const item of batch) {
+            const { error: singleErr } = await supabase.from('trip_requests').upsert(item);
+            if (singleErr) {
+              console.warn(`Aviso no envio do processo ${item.process_number}:`, singleErr.message);
+            }
+          }
         }
       }
     } catch (e) {

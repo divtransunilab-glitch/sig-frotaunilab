@@ -38,6 +38,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importResult, setImportResult] = useState<ImportSpreadsheetResult | null>(null);
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
   const [importMode, setImportMode] = useState<'replace' | 'append'>('replace');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -71,6 +72,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
           setErrorMsg('Nenhuma solicitação válida foi encontrada no arquivo. Verifique o modelo de planilha.');
         } else {
           setImportResult(result);
+          setSelectedSheets(result.sheets.map((s) => s.sheetName));
         }
       } catch (err: any) {
         setErrorMsg(`Falha ao ler o arquivo Excel: ${err?.message || 'Arquivo corrompido ou formato incompatível'}`);
@@ -87,16 +89,27 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
     reader.readAsArrayBuffer(f);
   };
 
+  const activeSheets = importResult
+    ? importResult.sheets.filter((s) => selectedSheets.includes(s.sheetName))
+    : [];
+
+  const tripsToImport = activeSheets.flatMap((s) => s.validTrips);
+
   const handleConfirmImport = async () => {
-    if (!importResult || importResult.allTrips.length === 0) return;
+    if (!importResult || tripsToImport.length === 0) {
+      setErrorMsg('Selecione pelo menos uma aba com solicitações válidas para importar.');
+      return;
+    }
     setIsProcessing(true);
+    setErrorMsg(null);
+
     try {
       if (importMode === 'replace') {
-        await TripService.replaceTrips(importResult.allTrips);
+        await TripService.replaceTrips(tripsToImport);
       } else {
-        await TripService.appendTrips(importResult.allTrips);
+        await TripService.appendTrips(tripsToImport);
       }
-      onImportSuccess(importResult.allTrips.length, importMode);
+      onImportSuccess(tripsToImport.length, importMode);
       onClose();
     } catch (err: any) {
       setErrorMsg(`Erro ao salvar no banco de dados: ${err?.message || 'Falha na conexão'}`);
@@ -108,6 +121,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
   const handleResetModal = () => {
     setFile(null);
     setImportResult(null);
+    setSelectedSheets([]);
     setErrorMsg(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -223,6 +237,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
             <div className="space-y-5">
               
               {/* File Info Bar */}
+              {/* File Info Bar */}
               <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
@@ -231,9 +246,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                   <div>
                     <div className="font-extrabold text-sm text-navy-950">{importResult.fileName}</div>
                     <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                      <span><strong>{importResult.totalImported}</strong> viagens válidas</span>
-                      <span>•</span>
-                      <span><strong>{importResult.sheets.length}</strong> aba(s) identificada(s)</span>
+                      <span><strong>{tripsToImport.length}</strong> viagens selecionadas de <strong>{importResult.totalImported}</strong> no arquivo</span>
                     </div>
                   </div>
                 </div>
@@ -247,24 +260,69 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                 </button>
               </div>
 
-              {/* Detected Sheets Badges */}
+              {/* Interactive Sheet Selector */}
               <div className="space-y-2">
-                <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
-                  <Layers className="w-3.5 h-3.5 text-brand-600" />
-                  <span>Abas e Meses Identificados na Planilha:</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {importResult.sheets.map((sheet) => (
-                    <div
-                      key={sheet.sheetName}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs flex items-center gap-2"
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
+                    <Layers className="w-3.5 h-3.5 text-brand-600" />
+                    <span>Escolha as Abas (Meses) que deseja carregar no sistema:</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSheets(importResult.sheets.map((s) => s.sheetName))}
+                      className="text-brand-600 hover:text-brand-700 font-bold underline cursor-pointer"
                     >
-                      <span className="font-extrabold text-navy-950">{sheet.sheetName}</span>
-                      <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
-                        {sheet.validTrips.length} viagens
-                      </span>
-                    </div>
-                  ))}
+                      Marcar Todas
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSheets([])}
+                      className="text-slate-500 hover:text-slate-700 font-bold underline cursor-pointer"
+                    >
+                      Desmarcar Todas
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {importResult.sheets.map((sheet) => {
+                    const isSelected = selectedSheets.includes(sheet.sheetName);
+                    return (
+                      <button
+                        key={sheet.sheetName}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedSheets(selectedSheets.filter((s) => s !== sheet.sheetName));
+                          } else {
+                            setSelectedSheets([...selectedSheets, sheet.sheetName]);
+                          }
+                        }}
+                        className={`px-3.5 py-2 rounded-xl border text-xs flex items-center gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-brand-50 border-brand-400 text-navy-950 shadow-2xs font-extrabold ring-1 ring-brand-300'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          className="rounded text-brand-600 focus:ring-brand-500 pointer-events-none"
+                        />
+                        <span>{sheet.sheetName}</span>
+                        <span
+                          className={`font-bold text-[10px] px-2 py-0.5 rounded-full ${
+                            isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {sheet.validTrips.length} v.
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -292,7 +350,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       <span>Substituir Toda a Base de Dados (Recomendado)</span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 pl-5">
-                      Limpa os dados de exemplo atuais e carrega exclusivamente a sua planilha real de 2026.
+                      Limpa os dados de exemplo atuais e carrega exclusivamente as viagens das abas selecionadas.
                     </p>
                   </div>
 
@@ -315,7 +373,7 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
                       <span>Mesclar / Adicionar às Viagens Existentes</span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 pl-5">
-                      Mantém as viagens atuais e apenas adiciona os processos novos sem duplicar.
+                      Mantém as viagens atuais e apenas adiciona os processos novos das abas selecionadas.
                     </p>
                   </div>
 
@@ -326,61 +384,69 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-700 text-xs">
-                    Pré-visualização dos Primeiros Registros Identificados:
+                    Pré-visualização das Viagens das Abas Selecionadas:
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Mostrando 8 de {importResult.totalImported} viagens
+                    {tripsToImport.length > 0
+                      ? `Mostrando ${Math.min(8, tripsToImport.length)} de ${tripsToImport.length} viagens`
+                      : 'Nenhuma viagem selecionada'}
                   </span>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-xs">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-extrabold text-[10.5px] uppercase tracking-wider border-b border-slate-200">
-                        <th className="py-2.5 px-3">Processo</th>
-                        <th className="py-2.5 px-2">Solicitante</th>
-                        <th className="py-2.5 px-2">Unidade</th>
-                        <th className="py-2.5 px-2">Saída</th>
-                        <th className="py-2.5 px-2">Retorno</th>
-                        <th className="py-2.5 px-2 text-center">Pax</th>
-                        <th className="py-2.5 px-2 text-center">KM</th>
-                        <th className="py-2.5 px-2">Situação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-[11px]">
-                      {importResult.allTrips.slice(0, 8).map((trip) => (
-                        <tr key={trip.id} className="hover:bg-slate-50">
-                          <td className="py-2 px-3 font-bold font-mono text-navy-950">
-                            {trip.process_number}
-                          </td>
-                          <td className="py-2 px-2 text-slate-800 font-medium truncate max-w-[140px]">
-                            {trip.requester_name}
-                          </td>
-                          <td className="py-2 px-2 font-bold text-brand-700">
-                            {trip.macro_unit}
-                          </td>
-                          <td className="py-2 px-2 text-slate-600">
-                            {safeFormatDate(trip.departure_datetime, "dd/MM 'às' HH:mm", '-')}
-                          </td>
-                          <td className="py-2 px-2 text-slate-600">
-                            {safeFormatDate(trip.return_datetime, "dd/MM 'às' HH:mm", '-')}
-                          </td>
-                          <td className="py-2 px-2 text-center font-bold text-slate-800">
-                            {trip.passenger_count}
-                          </td>
-                          <td className="py-2 px-2 text-center font-bold text-emerald-700">
-                            {trip.estimated_km} km
-                          </td>
-                          <td className="py-2 px-2">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {trip.status}
-                            </span>
-                          </td>
+                {tripsToImport.length > 0 ? (
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-xs">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-extrabold text-[10.5px] uppercase tracking-wider border-b border-slate-200">
+                          <th className="py-2.5 px-3">Processo</th>
+                          <th className="py-2.5 px-2">Solicitante</th>
+                          <th className="py-2.5 px-2">Unidade</th>
+                          <th className="py-2.5 px-2">Saída</th>
+                          <th className="py-2.5 px-2">Retorno</th>
+                          <th className="py-2.5 px-2 text-center">Pax</th>
+                          <th className="py-2.5 px-2 text-center">KM</th>
+                          <th className="py-2.5 px-2">Situação</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-[11px]">
+                        {tripsToImport.slice(0, 8).map((trip) => (
+                          <tr key={trip.id} className="hover:bg-slate-50">
+                            <td className="py-2 px-3 font-bold font-mono text-navy-950">
+                              {trip.process_number}
+                            </td>
+                            <td className="py-2 px-2 text-slate-800 font-medium truncate max-w-[140px]">
+                              {trip.requester_name}
+                            </td>
+                            <td className="py-2 px-2 font-bold text-brand-700">
+                              {trip.macro_unit}
+                            </td>
+                            <td className="py-2 px-2 text-slate-600">
+                              {safeFormatDate(trip.departure_datetime, "dd/MM 'às' HH:mm", '-')}
+                            </td>
+                            <td className="py-2 px-2 text-slate-600">
+                              {safeFormatDate(trip.return_datetime, "dd/MM 'às' HH:mm", '-')}
+                            </td>
+                            <td className="py-2 px-2 text-center font-bold text-slate-800">
+                              {trip.passenger_count}
+                            </td>
+                            <td className="py-2 px-2 text-center font-bold text-emerald-700">
+                              {trip.estimated_km} km
+                            </td>
+                            <td className="py-2 px-2">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                {trip.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-slate-400 border border-dashed rounded-2xl bg-slate-50">
+                    Nenhuma aba selecionada. Clique nas abas acima para marcar quais deseja importar.
+                  </div>
+                )}
               </div>
 
             </div>
@@ -401,12 +467,26 @@ export const ImportSpreadsheetModal: React.FC<ImportSpreadsheetModalProps> = ({
             {importResult && (
               <button
                 onClick={handleConfirmImport}
-                className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30 flex items-center gap-2 transition-all active:scale-95"
+                disabled={isProcessing || tripsToImport.length === 0}
+                className={`px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-2 transition-all active:scale-95 ${
+                  isProcessing || tripsToImport.length === 0
+                    ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                    : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/30'
+                }`}
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>
-                  Confirmar e Carregar {importResult.totalImported} Viagens ({importMode === 'replace' ? 'Substituir' : 'Adicionar'})
-                </span>
+                {isProcessing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Gravando {tripsToImport.length} Viagens no Banco...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>
+                      Confirmar e Carregar {tripsToImport.length} Viagens ({importMode === 'replace' ? 'Substituir' : 'Adicionar'})
+                    </span>
+                  </>
+                )}
               </button>
             )}
           </div>
