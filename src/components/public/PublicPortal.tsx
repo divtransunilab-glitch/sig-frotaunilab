@@ -481,17 +481,78 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               </div>
             )}
 
-            {/* Institutional Information Accordion / Notice Box */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-3 text-xs">
-              <div className="flex items-center gap-2 font-bold text-navy-950">
-                <Info className="w-4 h-4 text-brand-600" />
-                <span>Normas Institucionais de Transporte (DIVTRANS / UNILAB)</span>
+            {/* Institutional Information Accordion / Notice Box & Official Portarias */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2 font-extrabold text-navy-950 text-sm">
+                  <FileText className="w-4 h-4 text-brand-600" />
+                  <span>Normas e Portarias Institucionais (PROADI / UNILAB)</span>
+                </div>
+                <span className="text-[10px] font-bold bg-brand-50 text-brand-700 px-2 py-0.5 rounded border border-brand-200 uppercase tracking-wider">
+                  Documentos Oficiais
+                </span>
               </div>
+
               <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
                 <li>As solicitações devem ser enviadas com antecedência mínima de <strong>5 (cinco) dias úteis</strong>.</li>
                 <li>Demandas com antecedência inferior estarão sujeitas a avaliação prioritária e justificativa formal de urgência.</li>
                 <li>Veículos e motoristas serão alocados de acordo com a disponibilidade contratual da frota oficial e capacidade de passageiros.</li>
               </ul>
+
+              {/* Cards com Links Oficiais para as Portarias PROADI 2025 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2 border-t border-slate-100">
+                
+                {/* Portaria PROADI nº 332/2025 */}
+                <a
+                  href="https://unilab.edu.br/wp-content/uploads/2025/10/Portaria-PROADI-no-332-2025.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 rounded-xl bg-slate-50 hover:bg-brand-50/60 border border-slate-200/90 hover:border-brand-300 transition-all group flex flex-col justify-between space-y-2.5 shadow-2xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-xs text-navy-950 group-hover:text-brand-700 transition-colors flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                        Portaria PROADI nº 332, de 15/09/2025
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-brand-600 transition-colors shrink-0" />
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                      Normatiza os procedimentos e critérios para a solicitação dos serviços sob responsabilidade da Pró-Reitoria de Administração e Infraestrutura (PROADI) pela comunidade acadêmica e administrativa da UNILAB.
+                    </p>
+                  </div>
+                  <div className="text-[10.5px] font-bold text-brand-700 group-hover:underline inline-flex items-center gap-1 pt-1">
+                    <span>Acessar Portaria nº 332 (.PDF)</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </div>
+                </a>
+
+                {/* Portaria PROADI nº 333/2025 */}
+                <a
+                  href="https://unilab.edu.br/wp-content/uploads/2025/10/Portaria-PROADI-no-333-2025.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 rounded-xl bg-slate-50 hover:bg-brand-50/60 border border-slate-200/90 hover:border-brand-300 transition-all group flex flex-col justify-between space-y-2.5 shadow-2xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-xs text-navy-950 group-hover:text-brand-700 transition-colors flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                        Portaria PROADI nº 333, de 15/09/2025
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-brand-600 transition-colors shrink-0" />
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                      Regulamenta a utilização dos veículos oficiais da Universidade da Integração Internacional da Lusofonia Afro-Brasileira (UNILAB), no âmbito do estado do Ceará.
+                    </p>
+                  </div>
+                  <div className="text-[10.5px] font-bold text-brand-700 group-hover:underline inline-flex items-center gap-1 pt-1">
+                    <span>Acessar Portaria nº 333 (.PDF)</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </div>
+                </a>
+
+              </div>
             </div>
 
           </div>
