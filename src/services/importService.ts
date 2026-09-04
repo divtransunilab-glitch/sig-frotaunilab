@@ -598,13 +598,13 @@ export class ImportService {
           const rawRetTime = idxRetTime !== -1 ? row[idxRetTime] : null;
           const retTimeStr = rawRetTime ? this.parseExcelTime(rawRetTime) : '18:00';
 
-          const departureDatetime = `${depDateStr}T${depTimeStr}:00Z`;
-          const returnDatetime = `${retDateStr}T${retTimeStr}:00Z`;
+          const departureDatetime = `${depDateStr}T${depTimeStr}:00-03:00`;
+          const returnDatetime = `${retDateStr}T${retTimeStr}:00-03:00`;
 
           // Recebimento e Antecedência
           const rawRecDate = idxReceivedAt !== -1 ? row[idxReceivedAt] : null;
           const receivedDateStr = rawRecDate ? this.parseExcelDate(rawRecDate, sheetMonthIndex, sheetYear) : depDateStr;
-          const receivedAt = `${receivedDateStr}T09:00:00Z`;
+          const receivedAt = `${receivedDateStr}T09:00:00-03:00`;
 
           const advanceDays = idxAdvanceDays !== -1 && Number(row[idxAdvanceDays])
             ? Number(row[idxAdvanceDays])
