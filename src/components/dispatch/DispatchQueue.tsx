@@ -738,10 +738,10 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
         ) : (
           /* TABELA MODO 2: OPERACIONAL RESUMIDA */
           <div className="overflow-x-auto max-w-full">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
               <thead>
-                <tr className="bg-slate-100/80 border-b border-slate-200 text-[10.5px] font-bold text-slate-600 uppercase tracking-wider">
-                  <th className="py-2.5 px-3 pl-4">Nº Processo</th>
+                <tr className="bg-slate-100/90 border-b border-slate-200 text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
+                  <th className="py-2.5 px-3 pl-4 sticky left-0 bg-slate-100 z-10">Nº Processo</th>
                   <th className="py-2.5 px-2">Solicitante & Unidade</th>
                   <th className="py-2.5 px-2">Trecho</th>
                   <th className="py-2.5 px-2">Saída / Retorno</th>
@@ -750,7 +750,7 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
                   <th className="py-2.5 px-2">Antecedência</th>
                   <th className="py-2.5 px-2">Situação</th>
                   <th className="py-2.5 px-2">Alocação</th>
-                  <th className="py-2.5 px-3 text-right pr-4">Ações</th>
+                  <th className="py-2.5 px-3 text-right pr-4 sticky right-0 bg-slate-100 z-10 border-l border-slate-200/70">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-[11px]">
@@ -770,7 +770,7 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
 
                     return (
                       <tr key={trip.id} className="hover:bg-slate-50/90 transition-colors group">
-                        <td className="py-2.5 px-3 pl-4 font-bold text-navy-950 whitespace-nowrap font-mono">
+                        <td className="py-2.5 px-3 pl-4 font-bold text-navy-950 whitespace-nowrap font-mono sticky left-0 bg-white group-hover:bg-slate-50/90 z-10">
                           <span
                             onClick={() => onSelectTripDetail(trip)}
                             className="hover:text-brand-600 cursor-pointer underline decoration-dotted"
@@ -826,7 +826,7 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap">
+                        <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap sticky right-0 bg-white group-hover:bg-slate-50/90 z-10 border-l border-slate-200/70">
                           <div className="flex items-center justify-end gap-1">
                             {isConfirmed && (
                               <button
