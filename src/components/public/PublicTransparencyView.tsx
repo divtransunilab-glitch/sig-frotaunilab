@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { TripRequest, ActivityType } from '../../types';
 import { DistanceService } from '../../services/distanceService';
+import { INITIAL_CITIES } from '../../data/initialData';
 import { 
   BarChart3, 
   CheckCircle2, 
@@ -32,10 +33,19 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL'); // 'ALL' or '0'..'11'
   const [selectedActivity, setSelectedActivity] = useState<string>('ALL');
 
-  const cities = DistanceService.getCities();
+  const citiesMap = useMemo(() => {
+    const map = new Map<string, string>();
+    INITIAL_CITIES.forEach((c) => map.set(c.id, c.name));
+    try {
+      const loaded = DistanceService.getCities();
+      loaded.forEach((c) => map.set(c.id, c.name));
+    } catch {}
+    return map;
+  }, []);
+
   const getCityName = (id: string) => {
-    const c = cities.find((item) => item.id === id);
-    return c ? `${c.name}-${c.state}` : id;
+    if (!id) return 'Redenção';
+    return citiesMap.get(id) || id;
   };
 
   // Anos disponíveis nos dados
@@ -122,10 +132,27 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
       byRoute[routeKey].km += t.estimated_km || 0;
     });
 
-    const sortedRoutes = Object.entries(byRoute)
+    const allRoutes = Object.entries(byRoute)
       .map(([route, data]) => ({ route, ...data }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
+      .sort((a, b) => b.count - a.count);
+
+    const topRoutes = allRoutes.slice(0, 6);
+    const otherRoutes = allRoutes.slice(6);
+    const otherCount = otherRoutes.reduce((acc, r) => acc + r.count, 0);
+    const otherKm = otherRoutes.reduce((acc, r) => acc + r.km, 0);
+
+    const sortedRoutes: Array<{ route: string; count: number; km: number; isOther?: boolean }> = [
+      ...topRoutes.map((r) => ({ ...r, isOther: false }))
+    ];
+
+    if (otherCount > 0) {
+      sortedRoutes.push({
+        route: `Outras ${otherRoutes.length} Rotas Secundárias`,
+        count: otherCount,
+        km: otherKm,
+        isOther: true,
+      });
+    }
 
     return {
       total,
@@ -470,15 +497,24 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
               metrics.sortedRoutes.map((r, idx) => {
                 const pct = metrics.total > 0 ? Math.round((r.count / metrics.total) * 100) : 0;
                 return (
-                  <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                  <div 
+                    key={idx} 
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
+                      r.isOther 
+                        ? 'bg-slate-100/90 border-slate-200 text-slate-700 font-semibold' 
+                        : 'bg-slate-50 border-slate-100'
+                    }`}
+                  >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-5 h-5 rounded-full bg-navy-100 text-navy-800 font-bold text-[10px] flex items-center justify-center shrink-0">
-                        {idx + 1}
+                      <span className={`w-5 h-5 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0 ${
+                        r.isOther ? 'bg-slate-300 text-slate-700' : 'bg-navy-100 text-navy-800'
+                      }`}>
+                        {r.isOther ? '+' : idx + 1}
                       </span>
                       <span className="font-bold text-slate-800 truncate">{r.route}</span>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <div className="font-extrabold text-brand-700">{r.count} viagens</div>
+                      <div className="font-extrabold text-brand-700">{r.count} solicitações</div>
                       <div className="text-[10px] text-slate-400">{r.km.toLocaleString('pt-BR')} km ({pct}%)</div>
                     </div>
                   </div>
