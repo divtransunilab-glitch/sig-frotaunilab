@@ -219,18 +219,6 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Actions & Profile Mode Switcher */}
           <div className="flex items-center gap-2.5">
             
-            {/* Import Spreadsheet Shortcut Button */}
-            {onOpenImportModal && (
-              <button
-                onClick={onOpenImportModal}
-                className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white shadow-xs px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 whitespace-nowrap"
-                title="Subir planilha institucional com dados reais de Janeiro a Dezembro"
-              >
-                <RotateCcw className="w-3.5 h-3.5 hidden" />
-                <span>Subir Planilha (.xlsx)</span>
-              </button>
-            )}
-
             {/* Notification Bell with 3-Day Escalation Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
@@ -340,22 +328,6 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
-
-            {/* Pending Count Quick Button (if count > 0) */}
-            {pendingCount > 0 && (
-              <button
-                onClick={() => setActiveTab('dispatch')}
-                className="hidden sm:flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs whitespace-nowrap"
-                title={`${pendingCount} solicitações aguardando escalação`}
-              >
-                <span>{pendingCount} Pendentes</span>
-                {urgentCount > 0 && (
-                  <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                    {urgentCount} urgentes
-                  </span>
-                )}
-              </button>
-            )}
 
             {/* User Avatar, Password Change & Logout */}
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
