@@ -120,11 +120,44 @@ export class DistanceService {
   }
 
   /**
-   * Retorna KM total estimado para ida e volta
+   * Retorna KM total estimado considerando Origem, Cidades Intermediárias/Secundárias, Destino Principal e KM Extra Local.
+   * Rota: Origem -> Intermediária 1 -> Intermediária 2 -> Destino Principal -> Origem (Volta) + extraKm
    */
-  static calculateTotalKm(originCityId: string, destCityId: string): number {
-    const oneWay = this.getDistance(originCityId, destCityId);
-    return oneWay * 2;
+  static calculateTotalKm(
+    originCityId: string, 
+    destCityId: string, 
+    intermediateCityIds?: string[], 
+    extraKm?: number
+  ): number {
+    const validIntermediates = (intermediateCityIds || []).filter(
+      (id) => id && id !== originCityId && id !== destCityId
+    );
+
+    const extra = Number(extraKm) || 0;
+
+    if (validIntermediates.length === 0) {
+      const oneWay = this.getDistance(originCityId, destCityId);
+      const baseKm = oneWay * 2;
+      return baseKm + extra;
+    }
+
+    // Calcula itinerário sequencial: Origem -> Int1 -> Int2 -> ... -> Destino -> Origem
+    let totalKm = 0;
+    let currentCityId = originCityId;
+
+    // Trechos intermediários
+    for (const nextCityId of validIntermediates) {
+      totalKm += this.getDistance(currentCityId, nextCityId);
+      currentCityId = nextCityId;
+    }
+
+    // Trecho da última intermediária para o destino principal
+    totalKm += this.getDistance(currentCityId, destCityId);
+
+    // Trecho de volta do destino principal para a origem
+    totalKm += this.getDistance(destCityId, originCityId);
+
+    return Math.round(totalKm + extra);
   }
 
   /**

@@ -106,6 +106,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [originAddress, setOriginAddress] = useState('');
   const [destinationCityId, setDestinationCityId] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
+  const [intermediateCities, setIntermediateCities] = useState<string[]>([]);
+  const [extraKm, setExtraKm] = useState<number | ''>('');
   const [departureDate, setDepartureDate] = useState('');
   const [departureTime, setDepartureTime] = useState('');
   const [returnDate, setReturnDate] = useState('');
@@ -139,6 +141,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setOriginAddress('');
       setDestinationCityId('');
       setDestinationAddress('');
+      setIntermediateCities([]);
+      setExtraKm('');
       setDepartureDate('');
       setDepartureTime('');
       setReturnDate('');
@@ -165,17 +169,22 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   // Cálculo de Dia da Semana da Saída
   const departureDayOfWeek = departureDate ? safeFormatDate(`${departureDate}T00:00:00`, 'EEEE', '') : '---';
 
-  // Cálculo instantâneo de KM
+  // Cálculo instantâneo de KM (incluindo cidades intermediárias e km extra urbano)
   const [estimatedKm, setEstimatedKm] = useState<number>(0);
 
   useEffect(() => {
     if (originCityId && destinationCityId) {
-      const km = DistanceService.calculateTotalKm(originCityId, destinationCityId);
+      const km = DistanceService.calculateTotalKm(
+        originCityId, 
+        destinationCityId, 
+        intermediateCities, 
+        typeof extraKm === 'number' ? extraKm : 0
+      );
       setEstimatedKm(km);
     } else {
       setEstimatedKm(0);
     }
-  }, [originCityId, destinationCityId]);
+  }, [originCityId, destinationCityId, intermediateCities, extraKm]);
 
   // Cálculo instantâneo de Prazo de Antecedência
   const { advanceDays, statusDeadline } = TripService.calculateDeadline(
@@ -274,6 +283,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       return_datetime: returnDatetime,
       passenger_count: count,
       estimated_km: estimatedKm,
+      intermediate_cities: intermediateCities.length > 0 ? intermediateCities : undefined,
+      extra_km: typeof extraKm === 'number' && extraKm > 0 ? extraKm : undefined,
       
       // Opcionais
       allocated_contractor_id: allocatedContractorId || undefined,
@@ -576,6 +587,98 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   </div>
                 </div>
 
+              </div>
+
+              {/* BLOCO DE ROTAS SECUNDÁRIAS & DESLOCAMENTOS EXTRAS (PARADAS INTERMEDIÁRIAS / KM EXTRA) */}
+              <div className="sm:col-span-2 lg:col-span-3 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Milestone className="w-4 h-4 text-amber-700 shrink-0" />
+                    <div>
+                      <h5 className="font-extrabold text-xs text-amber-950">
+                        Rotas Secundárias / Deslocamentos Internos Extras (Opcional)
+                      </h5>
+                      <p className="text-[11px] text-amber-800 font-medium">
+                        Adicione cidades vizinhas do itinerário (ex: Pacoti, Aratuba) ou informe KM de deslocamento urbano no destino.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                  {/* Cidades Secundárias / Paradas no Percurso */}
+                  <div>
+                    <label className="block font-bold text-amber-950 mb-1">
+                      Paradas / Cidades Secundárias no Percurso
+                    </label>
+                    <select
+                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-amber-500 focus:outline-hidden"
+                      value=""
+                      onChange={(e) => {
+                        const cityId = e.target.value;
+                        if (cityId && !intermediateCities.includes(cityId)) {
+                          setIntermediateCities([...intermediateCities, cityId]);
+                        }
+                      }}
+                    >
+                      <option value="">+ Adicionar Cidade Secundária...</option>
+                      {cities
+                        .filter((c) => c.id !== originCityId && c.id !== destinationCityId && !intermediateCities.includes(c.id))
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} - {c.state}
+                          </option>
+                        ))}
+                    </select>
+
+                    {/* Lista de Cidades Secundárias Adicionadas */}
+                    {intermediateCities.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {intermediateCities.map((cityId, idx) => {
+                          const cityObj = cities.find((c) => c.id === cityId);
+                          const cityName = cityObj ? cityObj.name : cityId;
+                          return (
+                            <span
+                              key={cityId}
+                              className="bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs"
+                            >
+                              <span>{idx + 1}º {cityName}</span>
+                              <button
+                                type="button"
+                                onClick={() => setIntermediateCities(intermediateCities.filter((id) => id !== cityId))}
+                                className="text-amber-700 hover:text-rose-600 font-black p-0.5"
+                                title="Remover parada"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* KM de Deslocamento Urbano / Local Extra */}
+                  <div>
+                    <label className="block font-bold text-amber-950 mb-1">
+                      Deslocamento Urbano/Local Extra (KM)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Ex: 30 (KM adicionais nas cidades de destino)"
+                      value={extraKm}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0);
+                        setExtraKm(val);
+                      }}
+                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-hidden"
+                    />
+                    <span className="text-[10px] text-amber-800 font-medium block mt-1">
+                      Acresce à quilometragem total para cálculo exato de combustível e manutenção.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* 9. Data e Horário de Saída */}

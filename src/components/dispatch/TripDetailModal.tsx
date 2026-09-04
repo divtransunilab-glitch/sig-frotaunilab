@@ -94,7 +94,17 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   const veiculoModelo = vehicle ? vehicle.model : 'Veículo Oficial UNILAB';
   const veiculoCapacidade = vehicle ? vehicle.capacity : trip.passenger_count;
   const veiculoPlaca = vehicle ? vehicle.plate : 'A definir';
-  const rotaItinerario = `${getCityName(trip.origin_city_id)} ➔ ${getCityName(trip.destination_city_id)}`;
+  const intermediateNames = (trip.intermediate_cities || []).map((idOrName) => {
+    const found = cities.find((c) => c.id === idOrName);
+    return found ? found.name : idOrName;
+  });
+
+  const rotaItinerario = [
+    getCityName(trip.origin_city_id),
+    ...intermediateNames,
+    getCityName(trip.destination_city_id)
+  ].join(' ➔ ') + (trip.extra_km ? ` (+${trip.extra_km} km local)` : '');
+
   const enderecoOrigem = trip.origin_address ? ` (${trip.origin_address})` : '';
   const enderecoDestino = trip.destination_address ? ` (${trip.destination_address})` : '';
 
@@ -167,9 +177,9 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
               <div className="space-y-1">
                 <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
                   <MapPin className="w-4 h-4 text-brand-600 shrink-0" />
-                  <span>{getCityName(trip.origin_city_id)} ➔ {getCityName(trip.destination_city_id)}</span>
+                  <span>{rotaItinerario}</span>
                 </div>
-                {(trip.origin_address || trip.destination_address) && (
+                {(trip.origin_address || trip.destination_address || (trip.intermediate_cities && trip.intermediate_cities.length > 0)) && (
                   <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-4 gap-y-1 pl-6">
                     {trip.origin_address && (
                       <div><strong className="text-slate-700">Embarque:</strong> {trip.origin_address}</div>
@@ -177,11 +187,17 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
                     {trip.destination_address && (
                       <div><strong className="text-slate-700">Desembarque:</strong> {trip.destination_address}</div>
                     )}
+                    {intermediateNames.length > 0 && (
+                      <div><strong className="text-amber-800">Paradas Secundárias:</strong> {intermediateNames.join(', ')}</div>
+                    )}
+                    {trip.extra_km && (
+                      <div><strong className="text-amber-800">Deslocamento Local:</strong> +{trip.extra_km} km</div>
+                    )}
                   </div>
                 )}
               </div>
               <span className="bg-brand-100 text-brand-800 font-bold px-2.5 py-0.5 rounded-full text-xs shrink-0">
-                {trip.estimated_km} km (Ida e Volta)
+                {trip.estimated_km} km Total
               </span>
             </div>
 

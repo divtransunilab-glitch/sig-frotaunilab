@@ -632,7 +632,17 @@ export const DispatchQueue: React.FC<DispatchQueueProps> = ({
 
                         {/* 12. Destino */}
                         <td className="py-2.5 px-3 font-bold text-slate-900">
-                          {getCityName(trip.destination_city_id)}
+                          <span>{getCityName(trip.destination_city_id)}</span>
+                          {trip.intermediate_cities && trip.intermediate_cities.length > 0 && (
+                            <span className="block text-[9.5px] font-bold text-amber-700">
+                              +{trip.intermediate_cities.length} parada(s)
+                            </span>
+                          )}
+                          {trip.extra_km ? (
+                            <span className="block text-[9.5px] font-bold text-amber-700">
+                              +{trip.extra_km} km local
+                            </span>
+                          ) : null}
                         </td>
 
                         {/* 13. Data Saída */}

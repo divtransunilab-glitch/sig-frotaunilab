@@ -144,7 +144,9 @@ export interface TripRequest {
   rejection_reason?: RejectionReason | string;
   rejection_notes?: string;
   travel_report_status?: TravelReportStatus;
-  estimated_km: number; // total (ida + volta)
+  estimated_km: number; // total (ida + volta + trechos intermediários)
+  intermediate_cities?: string[]; // IDs ou nomes de cidades secundárias / paradas intermediárias
+  extra_km?: number; // KM extra de deslocamentos urbanos / locais no destino
   real_km?: number;
   fuel_liters?: number;
   toll_amount?: number;
