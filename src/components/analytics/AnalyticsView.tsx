@@ -500,6 +500,35 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       .sort((a, b) => b.count - a.count);
   }, [scopedTrips, kpis.total]);
 
+  // Distribuição por Motivo de Indeferimento (Organizada da maior quantidade para a menor)
+  const rejectionReasonDistribution = useMemo(() => {
+    const rejectedTrips = scopedTrips.filter((t) => t.status === 'Indeferido');
+    const totalRejected = rejectedTrips.length;
+
+    const countMap: Record<string, number> = {};
+
+    rejectedTrips.forEach((t) => {
+      let reason = (t.rejection_reason || 'Outros').toString().trim();
+      if (!reason) reason = 'Outros';
+      countMap[reason] = (countMap[reason] || 0) + 1;
+    });
+
+    const list = Object.entries(countMap)
+      .map(([name, count]) => ({
+        name,
+        count,
+        pctOfRejected: totalRejected > 0 ? Math.round((count / totalRejected) * 100) : 0,
+        pctOfTotal: kpis.total > 0 ? ((count / kpis.total) * 100).toFixed(1) : '0.0',
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      totalRejected,
+      pctOfTotalTrips: kpis.total > 0 ? ((totalRejected / kpis.total) * 100).toFixed(1) : '0.0',
+      list,
+    };
+  }, [scopedTrips, kpis.total]);
+
   const getHeatmapColor = (value: number) => {
     if (value === 0) return 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100';
     if (value <= 2) return 'bg-brand-50 text-brand-900 border-brand-200 font-bold hover:bg-brand-100 shadow-2xs';
@@ -1273,6 +1302,92 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             </div>
 
+          </div>
+
+          {/* ========================================================================= */}
+          {/* 4º BLOCO: MOTIVOS DE INDEFERIMENTOS DE SOLICITAÇÕES                      */}
+          {/* ========================================================================= */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                  <XCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                    Motivos de Indeferimento de Solicitações
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Análise quantitativa e percentual das justificativas operacionais de solicitações recusadas.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>{rejectionReasonDistribution.totalRejected} solicitações indeferidas ({rejectionReasonDistribution.pctOfTotalTrips}% do total)</span>
+                </span>
+              </div>
+            </div>
+
+            {rejectionReasonDistribution.list.length === 0 ? (
+              <div className="py-8 text-center bg-slate-50/60 rounded-xl border border-slate-200/60">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                <p className="text-xs font-bold text-slate-700">Nenhum indeferimento registrado no período!</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Todas as solicitações de viagem foram aprovadas ou estão em análise.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+                {rejectionReasonDistribution.list.map((item, idx) => {
+                  const rankBadges = ['bg-rose-600 text-white', 'bg-rose-500 text-white', 'bg-amber-600 text-white'];
+                  const rankBadge = idx < 3 ? rankBadges[idx] : 'bg-slate-200 text-slate-700';
+
+                  return (
+                    <div 
+                      key={item.name} 
+                      className="p-4 rounded-xl bg-slate-50/90 hover:bg-slate-100/80 border border-slate-200/80 transition-all space-y-3 relative group"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 ${rankBadge}`}>
+                            {idx + 1}º
+                          </span>
+                          <span className="font-extrabold text-xs text-slate-900 leading-snug truncate" title={item.name}>
+                            {item.name}
+                          </span>
+                        </div>
+                        <span className="text-[10.5px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 shrink-0">
+                          {item.pctOfRejected}%
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between pt-1">
+                        <div>
+                          <span className="text-2xl font-black text-navy-950">{item.count}</span>
+                          <span className="text-xs font-semibold text-slate-500 ml-1.5">
+                            {item.count === 1 ? 'solicitação' : 'solicitações'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          {item.pctOfTotal}% das viagens
+                        </span>
+                      </div>
+
+                      {/* Barra de Progresso Relativa ao Total de Indeferimentos */}
+                      <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden shadow-2xs">
+                        <div
+                          className="bg-gradient-to-r from-rose-500 to-amber-500 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.max(item.pctOfRejected, 4)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
         </div>
