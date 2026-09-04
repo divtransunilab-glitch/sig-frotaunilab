@@ -24,6 +24,15 @@ export const DistanceMatrixView: React.FC<DistanceMatrixViewProps> = ({ onMatrix
   const [viewMode, setViewMode] = useState<'matrix' | 'list'>('matrix');
   const [searchTerm, setSearchTerm] = useState('');
 
+  React.useEffect(() => {
+    DistanceService.fetchCitiesFromSupabase().then((data) => {
+      if (data && data.length > 0) setCities([...data]);
+    });
+    DistanceService.fetchDistancesFromSupabase().then((data) => {
+      if (data && data.length > 0) setDistances([...data]);
+    });
+  }, []);
+
   // Simulator Test
   const [simOrigin, setSimOrigin] = useState<string>(cities[0]?.id || 'city-1');
   const [simDest, setSimDest] = useState<string>(cities[2]?.id || 'city-3');

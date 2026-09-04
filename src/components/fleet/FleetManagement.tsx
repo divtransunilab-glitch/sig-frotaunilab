@@ -28,14 +28,16 @@ export const FleetManagement: React.FC = () => {
 
   useEffect(() => {
     FleetService.fetchVehiclesFromSupabase().then((data) => {
-      if (data && data.length > 0) {
-        setVehicles([...data]);
-      }
+      if (data && data.length > 0) setVehicles([...data]);
     });
     FleetService.fetchDriversFromSupabase().then((data) => {
-      if (data && data.length > 0) {
-        setDrivers([...data]);
-      }
+      if (data && data.length > 0) setDrivers([...data]);
+    });
+    FleetService.fetchContractorsFromSupabase().then((data) => {
+      if (data && data.length > 0) setContractors([...data]);
+    });
+    FleetService.fetchUnitsFromSupabase().then((data) => {
+      if (data && data.length > 0) setUnits([...data]);
     });
   }, []);
 

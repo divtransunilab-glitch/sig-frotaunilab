@@ -14,7 +14,6 @@ export class FleetService {
     if (saved) {
       try {
         const parsed: Vehicle[] = JSON.parse(saved);
-        // Se a lista gravada no storage tiver menos veículos que a lista oficial de 62, atualiza
         if (parsed && parsed.length >= INITIAL_VEHICLES.length) {
           return parsed;
         }
@@ -63,6 +62,17 @@ export class FleetService {
       vehicles.push(saved);
     }
     localStorage.setItem(STORAGE_KEY_VEHICLES, JSON.stringify(vehicles));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('vehicles').upsert([saved]);
+        if (error) console.error('Erro ao salvar veículo no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar veículo ao Supabase:', err);
+      }
+    })();
+
     return saved;
   }
 
@@ -82,7 +92,6 @@ export class FleetService {
     if (saved) {
       try {
         const parsed: Driver[] = JSON.parse(saved);
-        // Se a lista no storage tiver menos motoristas que os 27 oficiais, atualiza
         if (parsed && parsed.length >= INITIAL_DRIVERS.length) {
           return parsed;
         }
@@ -137,6 +146,17 @@ export class FleetService {
       drivers.push(saved);
     }
     localStorage.setItem(STORAGE_KEY_DRIVERS, JSON.stringify(drivers));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('drivers').upsert([saved]);
+        if (error) console.error('Erro ao salvar motorista no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar motorista ao Supabase:', err);
+      }
+    })();
+
     return saved;
   }
 
@@ -164,6 +184,23 @@ export class FleetService {
     return INITIAL_CONTRACTORS;
   }
 
+  static async fetchContractorsFromSupabase(): Promise<Contractor[]> {
+    try {
+      const { data, error } = await supabase
+        .from('contractors')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_CONTRACTORS, JSON.stringify(data));
+        return data as Contractor[];
+      }
+    } catch (e) {
+      console.warn('Falha ao sincronizar contratadas com Supabase:', e);
+    }
+    return this.getContractors();
+  }
+
   static getContractorById(id?: string): Contractor | undefined {
     if (!id) return undefined;
     return this.getContractors().find((c) => c.id === id);
@@ -184,6 +221,17 @@ export class FleetService {
       contractors.push(saved);
     }
     localStorage.setItem(STORAGE_KEY_CONTRACTORS, JSON.stringify(contractors));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('contractors').upsert([saved]);
+        if (error) console.error('Erro ao salvar contratada no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar contratada ao Supabase:', err);
+      }
+    })();
+
     return saved;
   }
 
@@ -211,6 +259,23 @@ export class FleetService {
     return INITIAL_UNITS;
   }
 
+  static async fetchUnitsFromSupabase(): Promise<InstitutionalUnit[]> {
+    try {
+      const { data, error } = await supabase
+        .from('institutional_units')
+        .select('*')
+        .order('code', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_UNITS, JSON.stringify(data));
+        return data as InstitutionalUnit[];
+      }
+    } catch (e) {
+      console.warn('Falha ao sincronizar unidades com Supabase:', e);
+    }
+    return this.getUnits();
+  }
+
   static getUnitById(id?: string): InstitutionalUnit | undefined {
     if (!id) return undefined;
     return this.getUnits().find((u) => u.id === id || u.code === id);
@@ -231,6 +296,17 @@ export class FleetService {
       units.push(saved);
     }
     localStorage.setItem(STORAGE_KEY_UNITS, JSON.stringify(units));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('institutional_units').upsert([saved]);
+        if (error) console.error('Erro ao salvar unidade institucional no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar unidade ao Supabase:', err);
+      }
+    })();
+
     return saved;
   }
 
@@ -238,7 +314,7 @@ export class FleetService {
     const units = this.getUnits().filter((u) => u.id !== id);
     localStorage.setItem(STORAGE_KEY_UNITS, JSON.stringify(units));
     try {
-      await supabase.from('units').delete().eq('id', id);
+      await supabase.from('institutional_units').delete().eq('id', id);
     } catch (e) {
       console.warn('Erro ao deletar unidade do Supabase:', e);
     }

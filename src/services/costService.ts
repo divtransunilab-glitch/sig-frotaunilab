@@ -1,4 +1,5 @@
 import { FuelPrices, Vehicle, TripRequest, FuelType } from '../types';
+import { supabase } from './supabaseClient';
 
 const FUEL_PRICES_STORAGE_KEY = 'sigfrota_fuel_prices';
 
@@ -58,6 +59,30 @@ export class CostService {
     return DEFAULT_FUEL_PRICES;
   }
 
+  static async fetchFuelPricesFromSupabase(): Promise<FuelPrices> {
+    try {
+      const { data, error } = await supabase
+        .from('fuel_parameters')
+        .select('*')
+        .eq('id', 'default')
+        .single();
+
+      if (!error && data) {
+        const prices: FuelPrices = {
+          gasoline: Number(data.gasoline_price) || DEFAULT_FUEL_PRICES.gasoline,
+          diesel: Number(data.diesel_price) || DEFAULT_FUEL_PRICES.diesel,
+          ethanol: Number(data.ethanol_price) || DEFAULT_FUEL_PRICES.ethanol,
+          maintenancePerKm: Number(data.maintenance_per_km) || DEFAULT_FUEL_PRICES.maintenancePerKm,
+        };
+        localStorage.setItem(FUEL_PRICES_STORAGE_KEY, JSON.stringify(prices));
+        return prices;
+      }
+    } catch (e) {
+      console.warn('Falha ao buscar parâmetros de combustível no Supabase:', e);
+    }
+    return this.getFuelPrices();
+  }
+
   /**
    * Salva novos parâmetros de combustíveis e manutenção
    */
@@ -67,6 +92,23 @@ export class CostService {
     } catch {
       // ignore
     }
+
+    // Sincroniza em segundo plano no Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('fuel_parameters').upsert([{
+          id: 'default',
+          gasoline_price: prices.gasoline,
+          diesel_price: prices.diesel,
+          ethanol_price: prices.ethanol,
+          maintenance_per_km: prices.maintenancePerKm,
+          updated_at: new Date().toISOString(),
+        }]);
+        if (error) console.error('Erro ao salvar parâmetros de combustível no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar parâmetros de combustível ao Supabase:', err);
+      }
+    })();
   }
 
   /**
@@ -168,7 +210,7 @@ export class CostService {
     const operationalCostPerKm = Number(vehicle.operational_cost_per_km !== undefined ? vehicle.operational_cost_per_km : prices.maintenancePerKm) || 0.45;
 
     const fuelCostPerKm = avgKmPerLiter > 0 ? fuelPricePerLiter / avgKmPerLiter : 0;
-    const totalCostPerKm = totalKm > 0 ? totalCost / totalKm : fuelCostPerKm + operationalCostPerKm;
+    const totalCostPerKm = totalKm > 0 ? totalCost / km : fuelCostPerKm + operationalCostPerKm;
 
     return {
       vehicle,

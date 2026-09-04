@@ -1,5 +1,6 @@
 import { City, DistanceMatrixItem } from '../types';
 import { INITIAL_CITIES, INITIAL_DISTANCE_MATRIX } from '../data/initialData';
+import { supabase } from './supabaseClient';
 
 const STORAGE_KEY_CITIES = 'sigfrota_cities';
 const STORAGE_KEY_DISTANCES = 'sigfrota_distances';
@@ -41,6 +42,23 @@ export class DistanceService {
     return this.loadCities();
   }
 
+  static async fetchCitiesFromSupabase(): Promise<City[]> {
+    try {
+      const { data, error } = await supabase
+        .from('cities')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_CITIES, JSON.stringify(data));
+        return data as City[];
+      }
+    } catch (e) {
+      console.warn('Falha ao buscar cidades no Supabase:', e);
+    }
+    return this.getCities();
+  }
+
   static getCityById(id: string): City | undefined {
     return this.getCities().find((c) => c.id === id);
   }
@@ -53,11 +71,38 @@ export class DistanceService {
     };
     const updated = [...cities, newCity];
     localStorage.setItem(STORAGE_KEY_CITIES, JSON.stringify(updated));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('cities').upsert([newCity]);
+        if (error) console.error('Erro ao salvar cidade no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar cidade ao Supabase:', err);
+      }
+    })();
+
     return newCity;
   }
 
   static getDistances(): DistanceMatrixItem[] {
     return this.loadDistances();
+  }
+
+  static async fetchDistancesFromSupabase(): Promise<DistanceMatrixItem[]> {
+    try {
+      const { data, error } = await supabase
+        .from('distance_matrix')
+        .select('*');
+
+      if (!error && data && data.length > 0) {
+        localStorage.setItem(STORAGE_KEY_DISTANCES, JSON.stringify(data));
+        return data as DistanceMatrixItem[];
+      }
+    } catch (e) {
+      console.warn('Falha ao buscar matriz de distâncias no Supabase:', e);
+    }
+    return this.getDistances();
   }
 
   /**
@@ -116,6 +161,17 @@ export class DistanceService {
     }
 
     localStorage.setItem(STORAGE_KEY_DISTANCES, JSON.stringify(updatedList));
+
+    // Sincroniza em segundo plano com o Supabase
+    (async () => {
+      try {
+        const { error } = await supabase.from('distance_matrix').upsert([item]);
+        if (error) console.error('Erro ao salvar distância no Supabase:', error);
+      } catch (err) {
+        console.error('Falha ao enviar distância ao Supabase:', err);
+      }
+    })();
+
     return item;
   }
 
