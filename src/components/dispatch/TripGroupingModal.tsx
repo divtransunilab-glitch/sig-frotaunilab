@@ -320,7 +320,7 @@ export const TripGroupingModal: React.FC<TripGroupingModalProps> = ({
               placeholder="Buscar processo, cidade..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8.5 pr-3 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-brand-500 shadow-2xs"
+              className="w-full pl-9 pr-3 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-brand-500 shadow-2xs"
             />
           </div>
         </div>
