@@ -100,7 +100,17 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       }
 
       // Sucesso na Autenticação Supabase
+      const userEmail = data.user.email || loginEmail.trim();
+      let displayName = data.user.user_metadata?.full_name || '';
+      if (!displayName && userEmail) {
+        const prefix = userEmail.split('@')[0].replace(/[._-]/g, ' ');
+        displayName = prefix.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      }
+      if (!displayName) displayName = 'Gestor de Frotas';
+
       localStorage.setItem('sigfrota_auth', 'true');
+      localStorage.setItem('sigfrota_user', JSON.stringify({ email: userEmail, name: displayName }));
+
       if (onLoginSuccess) {
         onLoginSuccess();
       }

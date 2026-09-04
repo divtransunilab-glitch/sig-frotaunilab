@@ -80,6 +80,7 @@ export function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('sigfrota_auth');
+    localStorage.removeItem('sigfrota_user');
     setIsAuthenticated(false);
     showToast('Sessão encerrada. Você retornou ao Portal do Solicitante.', 'info');
   };

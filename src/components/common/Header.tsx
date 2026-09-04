@@ -17,7 +17,8 @@ interface HeaderProps {
   setActiveTab: (tab: string) => void;
   pendingCount: number;
   urgentCount: number;
-  onResetData: () => void;
+  userName?: string;
+  onResetData?: () => void;
   onOpenImportModal?: () => void;
   onLogout?: () => void;
 }
@@ -27,11 +28,38 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   pendingCount,
   urgentCount,
-  onResetData,
+  userName,
   onOpenImportModal,
   onLogout,
 }) => {
   const currentDateFormatted = format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+
+  const getSavedUserName = (): string => {
+    if (userName) return userName;
+    try {
+      const saved = localStorage.getItem('sigfrota_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.name) return parsed.name;
+        if (parsed.email) {
+          const prefix = parsed.email.split('@')[0].replace(/[._-]/g, ' ');
+          return prefix.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return 'Gestor de Frotas';
+  };
+
+  const displayName = getSavedUserName();
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'GF';
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs transition-all w-full">
@@ -96,22 +124,15 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Reset Mock Data (Helpful for Demos) */}
-            <button
-              onClick={onResetData}
-              title="Restaurar dados de demonstração da UNILAB"
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-
             {/* User Avatar & Logout */}
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-navy-800 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                GF
+              <div className="w-8 h-8 rounded-full bg-navy-800 text-white flex items-center justify-center font-bold text-xs shadow-xs uppercase">
+                {initials}
               </div>
               <div className="hidden lg:block text-left">
-                <div className="text-xs font-semibold text-slate-800 leading-tight">Gestor de Frotas</div>
+                <div className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[180px]" title={displayName}>
+                  {displayName}
+                </div>
                 <div className="text-[10px] text-slate-500 font-medium">DIVTRANS / PROADI</div>
               </div>
 
