@@ -217,20 +217,23 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       }
 
       const fieldsFound: string[] = [];
-      if (extracted.process_number) fieldsFound.push('Nº Processo SEI');
-      if (extracted.requester_name) fieldsFound.push('Solicitante');
-      if (extracted.requester_phone) fieldsFound.push('Telefone');
-      if (extracted.macro_unit) fieldsFound.push('Unidade');
-      if (extracted.activity_type) fieldsFound.push(`Atividade (${extracted.activity_type})`);
-      if (extracted.origin_city_id || extracted.destination_city_id) fieldsFound.push('Cidades');
-      if (extracted.departure_date) fieldsFound.push('Datas');
+      if (extracted.process_number) fieldsFound.push(`Processo: ${extracted.process_number}`);
+      if (extracted.requester_name) fieldsFound.push(`Solicitante: ${extracted.requester_name}`);
+      if (extracted.requester_phone) fieldsFound.push(`Tel: ${extracted.requester_phone}`);
+      if (extracted.macro_unit) fieldsFound.push(`Unidade: ${extracted.macro_unit}`);
+      if (extracted.activity_type) fieldsFound.push(`Atividade: ${extracted.activity_type}`);
+      if (extracted.destination_city_id) {
+        const dCity = cities.find((c) => c.id === extracted.destination_city_id);
+        fieldsFound.push(`Destino: ${dCity ? dCity.name : extracted.destination_city_id}`);
+      }
+      if (extracted.departure_date) fieldsFound.push(`Saída: ${extracted.departure_date}`);
       if (extracted.passenger_count) fieldsFound.push(`${extracted.passenger_count} Passageiros`);
       if (extracted.intermediate_cities && extracted.intermediate_cities.length > 0) {
         fieldsFound.push(`${extracted.intermediate_cities.length} Parada(s)`);
       }
 
-      const details = fieldsFound.length > 0 ? ` (${fieldsFound.join(', ')})` : '';
-      setPdfAlertMessage(`Arquivo "${file.name}" lido com sucesso! Dados identificados${details} e preenchidos no formulário. Por favor, confira os campos e faça os ajustes necessários antes de salvar.`);
+      const details = fieldsFound.length > 0 ? ` • ${fieldsFound.join(' | ')}` : '';
+      setPdfAlertMessage(`Arquivo "${file.name}" lido com sucesso! ${details}. Confira os dados abaixo e ajuste qualquer campo se necessário.`);
     } catch (err: any) {
       console.error('Erro ao processar PDF:', err);
       alert(`Não foi possível realizar a leitura automática deste PDF: ${err.message || 'Erro desconhecido'}. Você pode preencher os campos manualmente.`);

@@ -1,7 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { DistanceService } from './distanceService';
-import { ActivityType, MacroUnit } from '../types';
+import { ActivityType, MacroUnit, City } from '../types';
 
 if (typeof window !== 'undefined') {
   try {
@@ -37,9 +37,66 @@ export interface ExtractedTripData {
   raw_text?: string;
 }
 
+// Normaliza strings removendo acentos e caracteres especiais para comparação flexível
+function normalizeText(str?: string): string {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Localiza a cidade correspondente na base oficial de cidades da UNILAB
+ */
+function matchCityInText(text: string, cities: City[], excludeCityId?: string): string | undefined {
+  if (!text) return undefined;
+  const normText = normalizeText(text);
+
+  // Aliases de bairros / locais comuns de Fortaleza
+  if (
+    /messejana|aldeota|papicu|parangaba|mucuripe|centro|benfica|aeroporto|pinto martins|edson queiroz|antonio bezerra|maraponga|itaperi|montese|meireles|hospita[l]?\s+de\s+saude\s+mental|hsm\b/i.test(
+      normText
+    )
+  ) {
+    const fort = cities.find((c) => normalizeText(c.name) === 'fortaleza');
+    if (fort) return fort.id;
+  }
+
+  // Aliases de Campi da UNILAB
+  if (/campus da liberdade|auroras|liberdade\b/i.test(normText)) {
+    const red = cities.find((c) => normalizeText(c.name) === 'redencao');
+    if (red) return red.id;
+  }
+  if (/campus palmares|palmares\b/i.test(normText)) {
+    const aca = cities.find((c) => normalizeText(c.name) === 'acarape');
+    if (aca) return aca.id;
+  }
+  if (/campus dos males|males\b/i.test(normText)) {
+    const sfc = cities.find((c) => normalizeText(c.name).includes('francisco do conde'));
+    if (sfc) return sfc.id;
+  }
+
+  // Busca na lista completa das 82 cidades cadastradas (priorizando nomes maiores para evitar falso positivo)
+  const sortedCities = [...cities].sort((a, b) => b.name.length - a.name.length);
+
+  for (const city of sortedCities) {
+    if (excludeCityId && city.id === excludeCityId) continue;
+    const normCity = normalizeText(city.name);
+    if (normCity.length < 3) continue;
+
+    const regex = new RegExp(`\\b${normCity}\\b`, 'i');
+    if (regex.test(normText)) {
+      return city.id;
+    }
+  }
+
+  return undefined;
+}
+
 export class PdfParserService {
   /**
-   * Extrai todo o texto contido no arquivo PDF preservando quebras de linha entre linhas e células de tabelas
+   * Extrai todo o texto contido no arquivo PDF preservando quebras de linha estruturais de tabelas e blocos
    */
   static async extractTextFromPdf(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
@@ -56,7 +113,7 @@ export class PdfParserService {
       for (const item of textContent.items as any[]) {
         if (!('str' in item)) continue;
         const currentY = item.transform ? Math.round(item.transform[5]) : null;
-        if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 5) {
+        if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 4) {
           pageText += '\n';
         } else if (pageText.length > 0 && !pageText.endsWith('\n') && !pageText.endsWith(' ')) {
           pageText += ' ';
@@ -79,57 +136,85 @@ export class PdfParserService {
    */
   static parseTripPdfText(rawText: string): ExtractedTripData {
     const result: ExtractedTripData = { raw_text: rawText };
+    const allCities = DistanceService.getCities();
 
-    // 1. Processo SEI (ex: 23282.013254/2026-11)
-    const seiMatch =
-      rawText.match(/\b(23282\.\d{5,6}\/\d{4}-\d{2})\b/) ||
-      rawText.match(/\b(\d{5}\.\d{5,6}\/\d{4}-\d{2})\b/);
-    if (seiMatch) {
-      result.process_number = seiMatch[1].trim();
+    // 1. NÚMERO DO PROCESSO SEI
+    // Prioridade absoluta: formato "Processo nº 23282.XXXXXX/2026-XX" no cabeçalho
+    const procTopMatch = rawText.match(/Processo\s*(?:n[ºo]\.?|numero|n°)?[\s:]*(\d{5,6}\.\d{5,7}\/\d{4}-\d{2})/i);
+    if (procTopMatch) {
+      result.process_number = procTopMatch[1].trim();
+    } else {
+      const seiGeneral = rawText.match(/\b(23282\.\d{5,7}\/\d{4}-\d{2})\b/) ||
+                         rawText.match(/\b(\d{5}\.\d{5,7}\/\d{4}-\d{2})\b/);
+      if (seiGeneral) {
+        result.process_number = seiGeneral[1].trim();
+      }
     }
 
-    // 2. Solicitante (Nome Completo)
-    const solSection = rawText.match(/Nome do Solicitante[\s\S]*?(?=Unidade Requisitante|1\. DADOS|$)/i);
-    if (solSection) {
-      const lines = solSection[0]
+    // 2. SEÇÃO 1: DADOS DO SOLICITANTE
+    const sec1Match = rawText.match(/1\.\s*DADOS\s+DO\s+SOLICITANTE[\s\S]*?(?=2\.\s*DADOS\s+DA\s+VIAGEM|$)/i);
+    const sec1Text = sec1Match ? sec1Match[0] : rawText;
+
+    // E-mail do Solicitante
+    const emailMatch = sec1Text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) {
+      result.requester_email = emailMatch[1].trim().toLowerCase();
+    }
+
+    // Telefone do Solicitante (suporta formatos: "85 987824463", "(85) 98782-4463", "85987824463")
+    const phoneCandidates = [
+      ...sec1Text.matchAll(/(?:Telefone|Contato)[^\d\n\r]*(\(?\d{2}\)?\s*9?\s*\d{4}[-\s]?\d{4})/gi),
+      ...sec1Text.matchAll(/\b(\d{2}\s*9\s*\d{4}[-\s]?\d{4})\b/g),
+      ...sec1Text.matchAll(/\b(\d{2}\s*\d{8,9})\b/g),
+      ...rawText.matchAll(/\b(85\s*9?\d{8})\b/g)
+    ];
+    if (phoneCandidates.length > 0 && phoneCandidates[0][1]) {
+      const rawDigits = phoneCandidates[0][1].replace(/\D/g, '');
+      if (rawDigits.length === 11) {
+        // Formata: (85) 98782-4463
+        result.requester_phone = `(${rawDigits.slice(0, 2)}) ${rawDigits.slice(2, 7)}-${rawDigits.slice(7)}`;
+      } else if (rawDigits.length === 10) {
+        // Formata: (85) 8782-4463
+        result.requester_phone = `(${rawDigits.slice(0, 2)}) ${rawDigits.slice(2, 6)}-${rawDigits.slice(6)}`;
+      } else {
+        result.requester_phone = phoneCandidates[0][1].replace(/\s+/g, ' ').trim();
+      }
+    }
+
+    // Nome do Solicitante
+    const nameBlock = sec1Text.match(/Nome do Solicitante[\s\S]*?(?=Unidade Requisitante|E-mail|$)/i);
+    if (nameBlock) {
+      const lines = nameBlock[0]
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l && !/Nome do Solicitante|SIAPE|1\.\s*DADOS/i.test(l));
+
       for (const line of lines) {
-        const clean = line.replace(/\b\d{5,8}\b.*$/, '').trim();
-        if (clean.length >= 4 && !/^\d+$/.test(clean) && !/solicitante|unilab|instituto/i.test(clean)) {
-          result.requester_name = clean;
+        const candidate = line.replace(/\b\d{5,8}\b.*$/, '').trim();
+        if (
+          candidate.length >= 4 &&
+          !/instituto|universidade|unilab|ciências|saúde|humanidades|reitoria|gabinete|serviço|pró-reitoria/i.test(candidate) &&
+          !/^\d+$/.test(candidate)
+        ) {
+          result.requester_name = candidate;
           break;
         }
       }
     }
     if (!result.requester_name) {
-      const altSol = rawText.match(/(?:Nome do Solicitante)[\s:.\n\r]+(?:SIAPE[\s:.\n\r]+)?([A-ZÀ-Úa-zà-ú\s]{4,60}?)(?:\s+\d{6,8}|\s+Unidade)/i);
+      const altSol = sec1Text.match(/(?:Nome do Solicitante)[\s:.\n\r]+(?:SIAPE[\s:.\n\r]+)?([A-ZÀ-Úa-zà-ú\s]{4,60}?)(?:\s+\d{6,8}|\s+Unidade)/i);
       if (altSol) result.requester_name = altSol[1].trim();
     }
 
-    // 3. E-mail e Telefone do Solicitante
-    const emailMatch = rawText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-    if (emailMatch) {
-      result.requester_email = emailMatch[1].trim().toLowerCase();
-    }
-
-    const phoneMatch =
-      rawText.match(/Telefone\s*(?:\(c\/\s*DDD\))?[\s\S]*?(\d{2}\s*9?\d{4}[-\s]?\d{4})/i) ||
-      rawText.match(/\b(85\s*9\d{8}|85\s*\d{8})\b/);
-    if (phoneMatch) {
-      result.requester_phone = phoneMatch[1].trim();
-    }
-
-    // 4. Unidade Requisitante e Macro Unit (ICS, IDR, etc.)
+    // Unidade Macro e Unidade Requisitante
     const siglaMatch =
-      rawText.match(/SIGLA[\s\S]*?\b(ICS|IDR|IH|ICEN|PROADI|PROPAE|GR|PROEX|PROINTER|ICSA|SECOM|PROPPG|DTI)\b/i) ||
-      rawText.match(/\b(ICS|IDR|IH|ICEN|PROADI|PROPAE|GR|PROEX|PROINTER|ICSA|SECOM|PROPPG|DTI)\b/);
+      sec1Text.match(/SIGLA[\s\S]*?\b(ICS|IDR|IH|ICEN|PROADI|PROPAE|GR|PROEX|PROINTER|ICSA|SECOM|PROPPG|DTI)\b/i) ||
+      sec1Text.match(/\b(ICS|IDR|IH|ICEN|PROADI|PROPAE|GR|PROEX|PROINTER|ICSA|SECOM|PROPPG|DTI)\b/);
     if (siglaMatch) {
       result.macro_unit = siglaMatch[1].toUpperCase() as MacroUnit;
     }
 
-    const reqSection = rawText.match(/Unidade Requisitante[\s\S]*?(?=SIGLA|E-mail|$)/i);
+    const reqSection = sec1Text.match(/Unidade Requisitante[\s\S]*?(?=SIGLA|E-mail|$)/i);
     if (reqSection) {
       const lines = reqSection[0]
         .split('\n')
@@ -145,7 +230,8 @@ export class PdfParserService {
       result.requesting_unit = result.macro_unit;
     }
 
-    // 5. Natureza da Atividade (Marcação com "X")
+    // 3. SEÇÃO 2: DADOS DA VIAGEM
+    // Natureza da Atividade (Marcação com "X")
     const natSection = rawText.match(/Natureza da Atividade[\s\S]*?(?=Objetivo\/Justificativa|$)/i);
     const natText = natSection ? natSection[0] : rawText;
 
@@ -178,20 +264,28 @@ export class PdfParserService {
       else result.activity_type = 'Administrativo';
     }
 
-    // 6. Objetivo / Justificativa da Viagem
-    const objSection = rawText.match(/Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?[\s\S]*?(?=Justificativa\s+p\/|Em\s+caso\s+de\s+solicitações|Endereço\s+de\s+Partida|$)/i);
+    // 4. OBJETIVO DA VIAGEM
+    // Exclui rigorosamente qualquer campo de justificativa fora do prazo, normas ou modelos institucionais
+    const objSection = rawText.match(
+      /Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?[\s\S]*?(?=Justificativa\s+p\/|Justificativa\s+para|Em\s+caso\s+de\s+solicitações|Endereço\s+de\s+Partida|$)/i
+    );
     if (objSection) {
       const lines = objSection[0]
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l && !/Objetivo(?:\/Justificativa)?/i.test(l));
+        .filter(
+          (l) =>
+            l &&
+            !/Objetivo(?:\/Justificativa)?/i.test(l) &&
+            !/Justificativa\s+p\/|Fora do Prazo|Estabelecido em Normativo|Em caso de solicitações|atestar a inexistência|aeroportos|PCDP|SCDP/i.test(l)
+        );
       if (lines.length > 0) {
         result.trip_objective = lines.join(' ').replace(/\s+/g, ' ').trim();
       }
     }
 
-    // 7. Endereço de Partida e Origem
-    const origSection = rawText.match(/Endereço\s+de\s+Partida(?:\s*\([^\)]*\))?[\s\S]*?(?=Endereço\s+de\s+Destino|Data\s+de\s+Partida|$)/i);
+    // 5. ENDEREÇO DE PARTIDA E CIDADE DE ORIGEM
+    const origSection = rawText.match(/Endereço\s+de\s+Partida(?:\s*\([^\)]*\))?[\s\S]*?(?=Endereço\s+de\s+Destino|Data\s+d[ea]\s+Partida|$)/i);
     if (origSection) {
       const lines = origSection[0]
         .split('\n')
@@ -201,20 +295,12 @@ export class PdfParserService {
         result.origin_address = lines.join(' ').replace(/\s+/g, ' ').trim();
       }
     }
+    result.origin_city_id = matchCityInText(result.origin_address || 'Campus da Liberdade', allCities) || 'city-71';
 
-    const origCheck = (result.origin_address || rawText).toLowerCase();
-    if (/liberdade|auroras|reden[çc][ãa]o/.test(origCheck)) {
-      result.origin_city_id = 'city-71'; // Redenção
-    } else if (/palmares|acarape/.test(origCheck)) {
-      result.origin_city_id = 'city-1'; // Acarape
-    } else if (/fortaleza/.test(origCheck)) {
-      result.origin_city_id = 'city-27'; // Fortaleza
-    } else {
-      result.origin_city_id = 'city-71'; // Padrão UNILAB: Redenção
-    }
-
-    // 8. Endereço de Destino e Cidade de Destino
-    const destSection = rawText.match(/Endereço\s+de\s+Destino(?:\s*\([^\)]*\))?[\s\S]*?(?=Data\s+de\s+Partida|Necessidade\s+de\s+Paradas|Horário|$)/i);
+    // 6. ENDEREÇO DE DESTINO E CIDADE DE DESTINO
+    const destSection = rawText.match(
+      /Endereço\s+de\s+Destino(?:\s*\([^\)]*\))?[\s\S]*?(?=Data\s+d[ea]\s+Partida|Data\s+d[ea]\s+Sa[íi]da|Necessidade\s+de\s+Paradas|Horário|$)/i
+    );
     if (destSection) {
       const lines = destSection[0]
         .split('\n')
@@ -225,31 +311,18 @@ export class PdfParserService {
       }
     }
 
-    const destCheck = (result.destination_address || '').toLowerCase();
-    if (/fortaleza|messejana|maracana[uú]|caucaia|aldeota/.test(destCheck)) {
-      result.destination_city_id = 'city-27'; // Fortaleza
-    } else if (/guaramiranga/.test(destCheck)) {
-      result.destination_city_id = 'city-30';
-    } else if (/baturit[eé]/.test(destCheck)) {
-      result.destination_city_id = 'city-11';
-    } else if (/quixad[aá]/.test(destCheck)) {
-      result.destination_city_id = 'city-69';
-    } else if (/quixeramobim/.test(destCheck)) {
-      result.destination_city_id = 'city-70';
-    } else if (/acarape/.test(destCheck)) {
-      result.destination_city_id = 'city-1';
-    } else if (/pacatuba/.test(destCheck)) {
-      result.destination_city_id = 'city-58';
-    } else if (/pacoti/.test(destCheck)) {
-      result.destination_city_id = 'city-59';
-    } else if (/sobral/.test(destCheck)) {
-      result.destination_city_id = 'city-78';
-    } else if (/juazeiro/.test(destCheck)) {
-      result.destination_city_id = 'city-42';
+    // Localização dinâmica da cidade de destino na base de dados completa
+    result.destination_city_id = matchCityInText(result.destination_address || '', allCities, result.origin_city_id);
+    if (!result.destination_city_id) {
+      // Se não encontrou no endereço, procura no trecho do texto logo após a menção de destino
+      const splitDest = rawText.split(/Endereço\s+de\s+Destino/i);
+      if (splitDest[1]) {
+        const destBlock = splitDest[1].slice(0, 600);
+        result.destination_city_id = matchCityInText(destBlock, allCities, result.origin_city_id);
+      }
     }
 
-    // 9. Datas, Horários e Quantidade de Passageiros
-    // Identifica linhas estruturadas de tabela: Data de Partida / Retorno | Horário | Nº Passageiros
+    // 7. DATAS, HORÁRIOS E NÚMERO DE PASSAGEIROS
     const combinedRows = [...rawText.matchAll(/(\d{2}\/\d{2}\/\d{4})\s+([01]?\d|2[0-3])[:hH]([0-5]\d)\s+(\d{1,3})/g)];
     if (combinedRows.length >= 1) {
       const [, d1, h1, min1, count1] = combinedRows[0];
@@ -266,7 +339,7 @@ export class PdfParserService {
       }
     }
 
-    // Fallbacks para datas e horários se não encontrados em formato tabular contíguo
+    // Fallbacks para datas e horários
     if (!result.departure_date) {
       const dates = [...rawText.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
       if (dates.length >= 1) {
@@ -292,38 +365,35 @@ export class PdfParserService {
     }
 
     if (!result.passenger_count) {
-      const passM = rawText.match(/(?:Nº de Passageiros[^\d\n\r]*)(\d{1,3})/i);
+      const passM = rawText.match(/(?:Nº\s*(?:de)?\s*Passageiros[^\d\n\r]*)(\d{1,3})/i);
       if (passM) {
         result.passenger_count = parseInt(passM[1], 10);
       }
     }
 
-    // 10. Necessidade de Paradas no Percurso (Cidades Secundárias)
+    // 8. PARADAS NO PERCURSO (CIDADES SECUNDÁRIAS)
     const paradasSection = rawText.match(/Necessidade\s+de\s+Paradas[\s\S]*?(?=3\.\s*RESPONSÁVEL|4\.\s*RELAÇÃO|$)/i);
     if (paradasSection) {
-      const pText = paradasSection[0].toLowerCase();
+      const pText = paradasSection[0];
       const intermediates: string[] = [];
-      if (/acarape/.test(pText) && result.origin_city_id !== 'city-1' && result.destination_city_id !== 'city-1') {
-        intermediates.push('city-1'); // Acarape
-      }
-      if (/pacatuba/.test(pText) && result.origin_city_id !== 'city-58' && result.destination_city_id !== 'city-58') {
-        intermediates.push('city-58'); // Pacatuba
-      }
-      if (/guaramiranga/.test(pText) && result.origin_city_id !== 'city-30' && result.destination_city_id !== 'city-30') {
-        intermediates.push('city-30');
-      }
-      if (/pacoti/.test(pText) && result.origin_city_id !== 'city-59' && result.destination_city_id !== 'city-59') {
-        intermediates.push('city-59');
-      }
-      if (/baturit[eé]/.test(pText) && result.origin_city_id !== 'city-11' && result.destination_city_id !== 'city-11') {
-        intermediates.push('city-11');
+      for (const city of allCities) {
+        if (city.id === result.origin_city_id || city.id === result.destination_city_id) continue;
+        const normCity = normalizeText(city.name);
+        if (normCity.length < 3) continue;
+
+        const reg = new RegExp(`\\b${normCity}\\b`, 'i');
+        if (reg.test(normalizeText(pText))) {
+          if (!intermediates.includes(city.id)) {
+            intermediates.push(city.id);
+          }
+        }
       }
       if (intermediates.length > 0) {
         result.intermediate_cities = intermediates;
       }
     }
 
-    // 11. Relação de Passageiros (Nomes e Contagem)
+    // 9. RELAÇÃO DE PASSAGEIROS (NOMES E CONTAGEM)
     const relacaoPassageiros = rawText.match(/4\.\s*RELAÇÃO\s+DE\s+PASSAGEIROS[\s\S]*$/i);
     if (relacaoPassageiros) {
       const lines = relacaoPassageiros[0].split('\n').map((l) => l.trim());
@@ -344,7 +414,7 @@ export class PdfParserService {
       }
     }
 
-    // 12. Responsável pelos Passageiros (Seção 3)
+    // 10. RESPONSÁVEL PELOS PASSAGEIROS
     const respSection = rawText.match(/3\.\s*RESPONSÁVEL\s+PELOS\s+PASSAGEIROS[\s\S]*?(?=4\.\s*RELAÇÃO|$)/i);
     if (respSection) {
       const lines = respSection[0]
