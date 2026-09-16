@@ -161,23 +161,38 @@ export class PdfParserService {
       result.requester_email = emailMatch[1].trim().toLowerCase();
     }
 
-    // Telefone do Solicitante (suporta formatos: "85 987824463", "(85) 98782-4463", "85987824463")
-    const phoneCandidates = [
-      ...sec1Text.matchAll(/(?:Telefone|Contato)[^\d\n\r]*(\(?\d{2}\)?\s*9?\s*\d{4}[-\s]?\d{4})/gi),
-      ...sec1Text.matchAll(/\b(\d{2}\s*9\s*\d{4}[-\s]?\d{4})\b/g),
-      ...sec1Text.matchAll(/\b(\d{2}\s*\d{8,9})\b/g),
-      ...rawText.matchAll(/\b(85\s*9?\d{8})\b/g)
-    ];
-    if (phoneCandidates.length > 0 && phoneCandidates[0][1]) {
-      const rawDigits = phoneCandidates[0][1].replace(/\D/g, '');
+    // Telefone do Solicitante (suporta formatos: "(85) 996043849", "(85) 98782-4463", "85 996043849", etc.)
+    const labelPhoneMatch = sec1Text.match(/(?:Telefone|Contato|Celular)[\s\S]*?(\(?\d{2}\)?\s*9?\s*\d{4}[-\s]?\d{4})/i);
+    let extractedPhoneStr: string | null = null;
+    if (labelPhoneMatch && labelPhoneMatch[1]) {
+      extractedPhoneStr = labelPhoneMatch[1];
+    } else {
+      const allPhones = [
+        ...sec1Text.matchAll(/(?:\(?\d{2}\)?\s*)?9\s*\d{4}[-\s]?\d{4}/g),
+        ...sec1Text.matchAll(/\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}/g),
+        ...rawText.matchAll(/(?:\(?\d{2}\)?\s*)?9\s*\d{4}[-\s]?\d{4}/g),
+        ...rawText.matchAll(/\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}/g),
+      ];
+      if (allPhones.length > 0 && allPhones[0][0]) {
+        extractedPhoneStr = allPhones[0][0];
+      }
+    }
+
+    if (extractedPhoneStr) {
+      const rawDigits = extractedPhoneStr.replace(/\D/g, '');
       if (rawDigits.length === 11) {
         // Formata: (85) 98782-4463
         result.requester_phone = `(${rawDigits.slice(0, 2)}) ${rawDigits.slice(2, 7)}-${rawDigits.slice(7)}`;
       } else if (rawDigits.length === 10) {
         // Formata: (85) 8782-4463
         result.requester_phone = `(${rawDigits.slice(0, 2)}) ${rawDigits.slice(2, 6)}-${rawDigits.slice(6)}`;
+      } else if (rawDigits.length === 9) {
+        // Assume DDD 85 padrão Unilab
+        result.requester_phone = `(85) ${rawDigits.slice(0, 5)}-${rawDigits.slice(5)}`;
+      } else if (rawDigits.length === 8) {
+        result.requester_phone = `(85) ${rawDigits.slice(0, 4)}-${rawDigits.slice(4)}`;
       } else {
-        result.requester_phone = phoneCandidates[0][1].replace(/\s+/g, ' ').trim();
+        result.requester_phone = extractedPhoneStr.replace(/\s+/g, ' ').trim();
       }
     }
 
@@ -190,7 +205,7 @@ export class PdfParserService {
         .filter((l) => l && !/Nome do Solicitante|SIAPE|1\.\s*DADOS/i.test(l));
 
       for (const line of lines) {
-        const candidate = line.replace(/\b\d{5,8}\b.*$/, '').trim();
+        const candidate = line.replace(/[\d\/]{5,}.*$/, '').replace(/\b\d{5,8}\b.*$/, '').trim();
         if (
           candidate.length >= 4 &&
           !/instituto|universidade|unilab|ciências|saúde|humanidades|reitoria|gabinete|serviço|pró-reitoria/i.test(candidate) &&
@@ -283,6 +298,13 @@ export class PdfParserService {
         result.trip_objective = lines.join(' ').replace(/\s+/g, ' ').trim();
       }
     }
+    if (result.trip_objective) {
+      result.trip_objective = result.trip_objective
+        .replace(/Justificativa\s+p\/.*$/i, '')
+        .replace(/Justificativa\s+para.*$/i, '')
+        .replace(/Em\s+caso\s+de\s+solicitações.*$/i, '')
+        .trim();
+    }
 
     // 5. ENDEREÇO DE PARTIDA E CIDADE DE ORIGEM
     const origSection = rawText.match(/Endereço\s+de\s+Partida(?:\s*\([^\)]*\))?[\s\S]*?(?=Endereço\s+de\s+Destino|Data\s+d[ea]\s+Partida|$)/i);
@@ -290,9 +312,18 @@ export class PdfParserService {
       const lines = origSection[0]
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l && !/Endereço\s+de\s+Partida/i.test(l));
+        .filter(
+          (l) =>
+            l &&
+            !/Endereço\s+de\s+Partida/i.test(l) &&
+            !/Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?/i.test(l) &&
+            !/--- PÁGINA \d+ ---/i.test(l) &&
+            !/SEI\s*\/?\s*UNILAB/i.test(l)
+        );
       if (lines.length > 0) {
-        result.origin_address = lines.join(' ').replace(/\s+/g, ' ').trim();
+        let cleanOrig = lines.join(' ').replace(/\s+/g, ' ').trim();
+        cleanOrig = cleanOrig.replace(/Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?.*$/i, '').trim();
+        result.origin_address = cleanOrig;
       }
     }
     result.origin_city_id = matchCityInText(result.origin_address || 'Campus da Liberdade', allCities) || 'city-71';
@@ -305,9 +336,18 @@ export class PdfParserService {
       const lines = destSection[0]
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l && !/Endereço\s+de\s+Destino/i.test(l));
+        .filter(
+          (l) =>
+            l &&
+            !/Endereço\s+de\s+Destino/i.test(l) &&
+            !/Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?/i.test(l) &&
+            !/--- PÁGINA \d+ ---/i.test(l) &&
+            !/SEI\s*\/?\s*UNILAB/i.test(l)
+        );
       if (lines.length > 0) {
-        result.destination_address = lines.join(' ').replace(/\s+/g, ' ').trim();
+        let cleanDest = lines.join(' ').replace(/\s+/g, ' ').trim();
+        cleanDest = cleanDest.replace(/Objetivo(?:\/Justificativa)?(?:\s+da\s+Viagem)?.*$/i, '').trim();
+        result.destination_address = cleanDest;
       }
     }
 
