@@ -103,6 +103,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [activityType, setActivityType] = useState<ActivityType | ''>('');
   const [requesterName, setRequesterName] = useState('');
   const [requesterEmail, setRequesterEmail] = useState('');
+  const [requesterPhone, setRequesterPhone] = useState('');
   const [macroUnit, setMacroUnit] = useState<MacroUnit | ''>('');
   const [requestingUnit, setRequestingUnit] = useState('');
   const [originCityId, setOriginCityId] = useState('');
@@ -142,6 +143,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setActivityType('');
       setRequesterName('');
       setRequesterEmail('');
+      setRequesterPhone('');
       setMacroUnit('');
       setRequestingUnit('');
       setOriginCityId('');
@@ -189,6 +191,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       if (extracted.process_number) setProcessNumber(extracted.process_number);
       if (extracted.requester_name) setRequesterName(extracted.requester_name);
       if (extracted.requester_email) setRequesterEmail(extracted.requester_email);
+      if (extracted.requester_phone) setRequesterPhone(extracted.requester_phone);
       if (extracted.macro_unit) setMacroUnit(extracted.macro_unit);
       if (extracted.requesting_unit) setRequestingUnit(extracted.requesting_unit);
       if (extracted.origin_city_id) setOriginCityId(extracted.origin_city_id);
@@ -203,14 +206,28 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       if (extracted.passenger_names) setPassengerNames(extracted.passenger_names);
       if (extracted.trip_objective) setTripObjective(extracted.trip_objective);
       if (extracted.activity_type) setActivityType(extracted.activity_type);
+      if (extracted.intermediate_cities && extracted.intermediate_cities.length > 0) {
+        setIntermediateCities(extracted.intermediate_cities);
+      }
+      if (extracted.responsible_names) {
+        setNotes((prev) => {
+          const respNote = `Responsável(is) pelos passageiros: ${extracted.responsible_names}`;
+          return prev ? `${prev}\n${respNote}` : respNote;
+        });
+      }
 
       const fieldsFound: string[] = [];
       if (extracted.process_number) fieldsFound.push('Nº Processo SEI');
       if (extracted.requester_name) fieldsFound.push('Solicitante');
+      if (extracted.requester_phone) fieldsFound.push('Telefone');
       if (extracted.macro_unit) fieldsFound.push('Unidade');
+      if (extracted.activity_type) fieldsFound.push(`Atividade (${extracted.activity_type})`);
       if (extracted.origin_city_id || extracted.destination_city_id) fieldsFound.push('Cidades');
       if (extracted.departure_date) fieldsFound.push('Datas');
-      if (extracted.passenger_count) fieldsFound.push('Passageiros');
+      if (extracted.passenger_count) fieldsFound.push(`${extracted.passenger_count} Passageiros`);
+      if (extracted.intermediate_cities && extracted.intermediate_cities.length > 0) {
+        fieldsFound.push(`${extracted.intermediate_cities.length} Parada(s)`);
+      }
 
       const details = fieldsFound.length > 0 ? ` (${fieldsFound.join(', ')})` : '';
       setPdfAlertMessage(`Arquivo "${file.name}" lido com sucesso! Dados identificados${details} e preenchidos no formulário. Por favor, confira os campos e faça os ajustes necessários antes de salvar.`);
@@ -340,6 +357,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       activity_type: activityType as ActivityType,
       requester_name: requesterName.trim(),
       requester_email: requesterEmail.trim(),
+      requester_phone: requesterPhone.trim() || undefined,
       macro_unit: macroUnit as MacroUnit,
       requesting_unit: requestingUnit.trim(),
       origin_city_id: originCityId,
@@ -604,6 +622,20 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                   placeholder="solicitante@unilab.edu.br"
                   value={requesterEmail}
                   onChange={(e) => setRequesterEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-brand-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Telefone do Solicitante */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Telefone de Contato
+                </label>
+                <input
+                  type="text"
+                  placeholder="(85) 98782-4463"
+                  value={requesterPhone}
+                  onChange={(e) => setRequesterPhone(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-brand-500 focus:outline-hidden"
                 />
               </div>
