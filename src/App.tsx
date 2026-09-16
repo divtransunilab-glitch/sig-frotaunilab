@@ -60,8 +60,19 @@ export function App() {
   const loadTrips = async () => {
     try {
       const freshData = await TripService.fetchFromSupabase();
-      if (freshData) {
-        setTrips([...freshData]);
+      if (freshData && freshData.length > 0) {
+        const localTrips = TripService.getTrips();
+        const map = new Map<string, TripRequest>();
+        freshData.forEach((t) => map.set(t.id, t));
+        localTrips.forEach((t) => {
+          if (!map.has(t.id)) {
+            map.set(t.id, t);
+          }
+        });
+        const combined = Array.from(map.values()).sort(
+          (a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime()
+        );
+        setTrips(combined);
         return;
       }
     } catch {
@@ -255,9 +266,11 @@ export function App() {
 
   const handleSaveNewTrip = (tripData: Partial<TripRequest>) => {
     const saved = TripService.saveTrip(tripData);
-    loadTrips();
 
-    // Log de auditoria de nova solicitação
+    // 1. Atualiza imediatamente o estado React no mesmo ciclo, aparecendo na fila instantaneamente
+    setTrips((prevTrips) => [saved, ...prevTrips.filter((t) => t.id !== saved.id)]);
+
+    // 2. Log de auditoria de nova solicitação
     AuditService.logEvent({
       action: 'Criação de Solicitação',
       process_number: saved.process_number,
@@ -268,6 +281,9 @@ export function App() {
     });
 
     showToast(`Processo ${saved.process_number} cadastrado com sucesso!`, 'success');
+
+    // 3. Sincroniza em background
+    loadTrips();
   };
 
   // Counts for badges
@@ -298,6 +314,7 @@ export function App() {
         <PublicPortal
           onLoginSuccess={handleLogin}
           onNewTripCreated={(trip) => {
+            setTrips((prevTrips) => [trip, ...prevTrips.filter((t) => t.id !== trip.id)]);
             loadTrips();
             showToast(`Solicitação ${trip.process_number} registrada!`, 'success');
           }}

@@ -27,11 +27,14 @@ import {
   User,
   ShieldCheck,
   Clock,
-  Info
+  Info,
+  Upload,
+  Loader2
 } from 'lucide-react';
 import { format, parseISO, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { safeFormatDate } from '../../utils/dateUtils';
+import { PdfParserService } from '../../services/pdfParserService';
 
 interface NewTripModalProps {
   isOpen: boolean;
@@ -126,6 +129,10 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [tripObjective, setTripObjective] = useState('');
   const [notes, setNotes] = useState('');
 
+  // --- LEITURA INTELIGENTE DE PDF ---
+  const [isParsingPdf, setIsParsingPdf] = useState(false);
+  const [pdfAlertMessage, setPdfAlertMessage] = useState<string | null>(null);
+
   // Reset completo de todos os campos ao abrir o formulário
   useEffect(() => {
     if (isOpen) {
@@ -158,8 +165,63 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setPassengerNames('');
       setTripObjective('');
       setNotes('');
+      setIsParsingPdf(false);
+      setPdfAlertMessage(null);
     }
   }, [isOpen]);
+
+  // Manipulador de upload e extração de PDF
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      alert('Por favor, selecione um arquivo válido em formato PDF.');
+      return;
+    }
+
+    try {
+      setIsParsingPdf(true);
+      setPdfAlertMessage(null);
+      const text = await PdfParserService.extractTextFromPdf(file);
+      const extracted = PdfParserService.parseTripPdfText(text);
+
+      if (extracted.process_number) setProcessNumber(extracted.process_number);
+      if (extracted.requester_name) setRequesterName(extracted.requester_name);
+      if (extracted.requester_email) setRequesterEmail(extracted.requester_email);
+      if (extracted.macro_unit) setMacroUnit(extracted.macro_unit);
+      if (extracted.requesting_unit) setRequestingUnit(extracted.requesting_unit);
+      if (extracted.origin_city_id) setOriginCityId(extracted.origin_city_id);
+      if (extracted.destination_city_id) setDestinationCityId(extracted.destination_city_id);
+      if (extracted.origin_address) setOriginAddress(extracted.origin_address);
+      if (extracted.destination_address) setDestinationAddress(extracted.destination_address);
+      if (extracted.departure_date) setDepartureDate(extracted.departure_date);
+      if (extracted.departure_time) setDepartureTime(extracted.departure_time);
+      if (extracted.return_date) setReturnDate(extracted.return_date);
+      if (extracted.return_time) setReturnTime(extracted.return_time);
+      if (extracted.passenger_count) setPassengerCount(extracted.passenger_count);
+      if (extracted.passenger_names) setPassengerNames(extracted.passenger_names);
+      if (extracted.trip_objective) setTripObjective(extracted.trip_objective);
+      if (extracted.activity_type) setActivityType(extracted.activity_type);
+
+      const fieldsFound: string[] = [];
+      if (extracted.process_number) fieldsFound.push('Nº Processo SEI');
+      if (extracted.requester_name) fieldsFound.push('Solicitante');
+      if (extracted.macro_unit) fieldsFound.push('Unidade');
+      if (extracted.origin_city_id || extracted.destination_city_id) fieldsFound.push('Cidades');
+      if (extracted.departure_date) fieldsFound.push('Datas');
+      if (extracted.passenger_count) fieldsFound.push('Passageiros');
+
+      const details = fieldsFound.length > 0 ? ` (${fieldsFound.join(', ')})` : '';
+      setPdfAlertMessage(`Arquivo "${file.name}" lido com sucesso! Dados identificados${details} e preenchidos no formulário. Por favor, confira os campos e faça os ajustes necessários antes de salvar.`);
+    } catch (err: any) {
+      console.error('Erro ao processar PDF:', err);
+      alert(`Não foi possível realizar a leitura automática deste PDF: ${err.message || 'Erro desconhecido'}. Você pode preencher os campos manualmente.`);
+    } finally {
+      setIsParsingPdf(false);
+      e.target.value = '';
+    }
+  };
 
   // Sincroniza campos combinados de datetime
   const departureDatetime = departureDate && departureTime ? `${departureDate}T${departureTime}` : `${format(new Date(), 'yyyy-MM-dd')}T08:00`;
@@ -335,6 +397,79 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
           
+          {/* Card de Anexo Inteligente de PDF (SEI / UNILAB) */}
+          <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border-2 border-dashed border-amber-400/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3.5 w-full sm:w-auto">
+              <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0 shadow-2xs">
+                {isParsingPdf ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-amber-700" />
+                ) : (
+                  <FileText className="w-6 h-6 text-amber-700" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-extrabold text-xs text-amber-950 uppercase tracking-wide">
+                    Anexar PDF da Solicitação / Processo SEI
+                  </h4>
+                  <span className="text-[10px] bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded-full font-bold border border-amber-300">
+                    Leitura Automática
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-0.5 leading-snug">
+                  Anexe o documento em PDF para que o sistema extraia e preencha os dados automaticamente. Você poderá conferir e ajustar qualquer campo antes de salvar.
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-auto shrink-0">
+              <label
+                className={`cursor-pointer inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs w-full sm:w-auto active:scale-95 ${
+                  isParsingPdf
+                    ? 'bg-amber-300 text-amber-900 cursor-not-allowed'
+                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/25'
+                }`}
+              >
+                {isParsingPdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Lendo PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    <span>Carregar PDF</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  disabled={isParsingPdf}
+                  onChange={handlePdfUpload}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Banner de Feedback da Leitura do PDF */}
+          {pdfAlertMessage && (
+            <div className="p-3.5 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-emerald-950 text-xs flex items-center justify-between gap-3 shadow-xs animate-fade-in">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span className="leading-relaxed font-medium">{pdfAlertMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPdfAlertMessage(null)}
+                className="text-emerald-700 hover:text-emerald-950 text-base font-bold p-1 leading-none"
+                title="Fechar mensagem"
+              >
+                &times;
+              </button>
+            </div>
+          )}
+
           {/* Status de Prazo & KM Banner */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
