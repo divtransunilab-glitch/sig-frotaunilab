@@ -8,6 +8,10 @@ ALTER TABLE public.trip_requests
   ADD COLUMN IF NOT EXISTS intermediate_cities text[],
   ADD COLUMN IF NOT EXISTS extra_km numeric(10, 2);
 
+-- 1.1 Permitir múltiplas viagens vinculadas ao mesmo número de processo SEI
+ALTER TABLE public.trip_requests
+  DROP CONSTRAINT IF EXISTS trip_requests_process_number_key;
+
 -- 2. Habilitar Supabase Realtime na tabela trip_requests (atualização entre operadores)
 DO $$
 BEGIN

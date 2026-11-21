@@ -89,6 +89,24 @@ export function App() {
 
   useEffect(() => {
     loadTrips();
+
+    const handleSyncNotice = (evt: Event) => {
+      const detail = (evt as CustomEvent).detail;
+      if (!detail) return;
+      if (detail.tripId && detail.newProcessNumber) {
+        setTrips((prev) =>
+          prev.map((t) =>
+            t.id === detail.tripId ? { ...t, process_number: detail.newProcessNumber } : t
+          )
+        );
+      }
+      if (detail.message) {
+        showToast(detail.message, detail.type || 'warning');
+      }
+    };
+
+    window.addEventListener('sigfrota:trip-sync-notice', handleSyncNotice);
+    return () => window.removeEventListener('sigfrota:trip-sync-notice', handleSyncNotice);
   }, []);
 
   // Atualização em tempo real entre operadores (Supabase Realtime)

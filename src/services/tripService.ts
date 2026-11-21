@@ -292,21 +292,76 @@ export class TripService {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(trips));
 
     // Sincronização automática com Supabase (encadeada para evitar race condition com fetchFromSupabase)
-    // Tenta gravar com intermediate_cities/extra_km; se as colunas ainda não existirem no banco, faz fallback seguro.
+    // Trata automaticamente:
+    // 1) PGRST204 (colunas intermediate_cities/extra_km ainda não criadas) -> fallback sem essas colunas
+    // 2) 23505 (process_number duplicado pela constraint unique) -> adiciona sufixo (2), (3)... para nunca perder o cadastro
     const fullPayload = this.toSupabaseRow(savedTrip, true);
     const basePayload = this.toSupabaseRow(savedTrip, false);
     this.pendingSyncPromise = this.pendingSyncPromise.then(async () => {
       try {
-        const res: any = await supabase.from('trip_requests').upsert(fullPayload);
+        let res: any = await supabase.from('trip_requests').upsert(fullPayload);
+
         if (res?.error) {
           const msg = String(res.error.message || '');
           if (msg.includes('intermediate_cities') || msg.includes('extra_km') || res.error.code === 'PGRST204') {
-            const fallbackRes: any = await supabase.from('trip_requests').upsert(basePayload);
-            if (fallbackRes?.error) {
-              console.error('Supabase sync trip_requests fallback error:', fallbackRes.error.message);
+            res = await supabase.from('trip_requests').upsert(basePayload);
+          }
+        }
+
+        // Se o banco ainda tiver constraint UNIQUE em process_number (23505), garante persistência com sufixo (2), (3)...
+        if (res?.error && (res.error.code === '23505' || String(res.error.message || '').includes('process_number'))) {
+          const originalProc = savedTrip.process_number;
+          let persisted = false;
+          for (let attempt = 2; attempt <= 20; attempt++) {
+            const suffixedProc = `${originalProc} (${attempt})`;
+            const retryFull = { ...fullPayload, process_number: suffixedProc };
+            const retryBase = { ...basePayload, process_number: suffixedProc };
+            let retryRes: any = await supabase.from('trip_requests').upsert(retryFull);
+            if (retryRes?.error && (retryRes.error.code === 'PGRST204' || String(retryRes.error.message || '').includes('intermediate_cities'))) {
+              retryRes = await supabase.from('trip_requests').upsert(retryBase);
             }
-          } else {
-            console.error('Supabase sync trip_requests error:', res.error.message, res.error);
+            if (!retryRes?.error) {
+              // Atualiza no localStorage para refletir o número salvo no banco
+              const currentTrips = this.loadTrips();
+              const targetIdx = currentTrips.findIndex((t) => t.id === savedTrip.id);
+              if (targetIdx !== -1) {
+                currentTrips[targetIdx] = { ...currentTrips[targetIdx], process_number: suffixedProc };
+                localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(currentTrips));
+              }
+              try {
+                window.dispatchEvent(
+                  new CustomEvent('sigfrota:trip-sync-notice', {
+                    detail: {
+                      type: 'warning',
+                      tripId: savedTrip.id,
+                      newProcessNumber: suffixedProc,
+                      message: `O processo "${originalProc}" já existia no banco; salvo como "${suffixedProc}" para não sobrescrever nem perder o cadastro.`,
+                    },
+                  })
+                );
+              } catch {
+                // ignore
+              }
+              persisted = true;
+              break;
+            }
+          }
+          if (!persisted) {
+            console.error('Supabase sync trip_requests duplicate error:', res.error.message);
+          }
+        } else if (res?.error) {
+          console.error('Supabase sync trip_requests error:', res.error.message, res.error);
+          try {
+            window.dispatchEvent(
+              new CustomEvent('sigfrota:trip-sync-notice', {
+                detail: {
+                  type: 'warning',
+                  message: `Aviso: falha ao salvar no banco Supabase (${res.error.message}).`,
+                },
+              })
+            );
+          } catch {
+            // ignore
           }
         }
       } catch (err: any) {
