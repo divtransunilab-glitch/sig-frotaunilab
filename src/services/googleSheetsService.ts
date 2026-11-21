@@ -562,6 +562,29 @@ function tripToRow(t) {
   ];
 }
 
+function applyRowStatusStyle(sheet, rowIndex, numCols, status) {
+  var range = sheet.getRange(rowIndex, 1, 1, numCols);
+  var s = String(status || '').toLowerCase();
+
+  if (s.indexOf('confirmado') !== -1) {
+    // Verde (Confirmado ao Demandante)
+    range.setBackground('#bbf7d0');
+    range.setFontColor('#14532d');
+  } else if (s.indexOf('cancelado') !== -1) {
+    // Vermelho (Cancelado pelo Demandante / Unidade Executante)
+    range.setBackground('#fecaca');
+    range.setFontColor('#7f1d1d');
+  } else if (s.indexOf('indeferido') !== -1) {
+    // Preto com texto branco (Indeferido)
+    range.setBackground('#111827');
+    range.setFontColor('#ffffff');
+  } else {
+    // Padrão (Pendente de Análise / outros)
+    range.setBackground('#ffffff');
+    range.setFontColor('#0f172a');
+  }
+}
+
 function upsertTrip(trip) {
   var tabName = getTabNameForTrip(trip);
   var sheet = getOrCreateSheet(tabName);
@@ -572,13 +595,17 @@ function upsertTrip(trip) {
     var rawIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = 0; i < rawIds.length; i++) {
       if (String(rawIds[i][0]) === String(trip.id)) {
-        sheet.getRange(i + 2, 1, 1, rowValues.length).setValues([rowValues]);
+        var existingRow = i + 2;
+        sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+        applyRowStatusStyle(sheet, existingRow, rowValues.length, trip.status);
         return tabName;
       }
     }
   }
 
   sheet.appendRow(rowValues);
+  var newRow = sheet.getLastRow();
+  applyRowStatusStyle(sheet, newRow, rowValues.length, trip.status);
   return tabName;
 }
 
