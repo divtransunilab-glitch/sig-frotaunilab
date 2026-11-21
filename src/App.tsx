@@ -208,7 +208,7 @@ export function App() {
     }
   ) => {
     const { trip, conflictWarning } = TripService.dispatchTrip(tripId, allocation);
-    loadTrips();
+    setTrips((prev) => prev.map((t) => (t.id === trip.id ? trip : t)));
     
     // Log de auditoria do despacho
     AuditService.logEvent({
@@ -232,7 +232,7 @@ export function App() {
     data: { reason: RejectionReason | string; rejection_notes?: string }
   ) => {
     const trip = TripService.rejectTrip(tripId, data);
-    loadTrips();
+    setTrips((prev) => prev.map((t) => (t.id === trip.id ? trip : t)));
 
     // Log de auditoria do indeferimento
     AuditService.logEvent({
@@ -252,7 +252,11 @@ export function App() {
     data: { departureDatetime: string; returnDatetime: string; notes?: string }
   ) => {
     const trip = TripService.changeTripDates(tripId, data);
-    loadTrips();
+    setTrips((prev) =>
+      prev
+        .map((t) => (t.id === trip.id ? trip : t))
+        .sort((a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime())
+    );
 
     // Log de auditoria de alteração de datas
     AuditService.logEvent({
@@ -270,8 +274,13 @@ export function App() {
   const handleSaveNewTrip = (tripData: Partial<TripRequest>) => {
     const saved = TripService.saveTrip(tripData);
 
-    // 1. Atualiza imediatamente o estado React no mesmo ciclo, aparecendo na fila instantaneamente
-    setTrips((prevTrips) => [saved, ...prevTrips.filter((t) => t.id !== saved.id)]);
+    // 1. Atualiza imediatamente o estado React com a lista local atualizada (sem sobrescrever com fetch defasado)
+    setTrips((prevTrips) => {
+      const merged = [saved, ...prevTrips.filter((t) => t.id !== saved.id)];
+      return merged.sort(
+        (a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime()
+      );
+    });
 
     // 2. Log de auditoria de nova solicitação
     AuditService.logEvent({
@@ -285,9 +294,6 @@ export function App() {
 
     const sheetsNote = GoogleSheetsService.isConfigured() ? ' (backup enviado ao Google Sheets)' : '';
     showToast(`Processo ${saved.process_number} cadastrado com sucesso!${sheetsNote}`, 'success');
-
-    // 3. Sincroniza em background
-    loadTrips();
   };
 
   // Counts for badges

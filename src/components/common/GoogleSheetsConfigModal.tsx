@@ -59,12 +59,12 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
     setFeedback(null);
 
     const trimmedUrl = webhookUrl.trim();
-    if (enabled && trimmedUrl && !trimmedUrl.startsWith('https://script.google.com/')) {
-      setFeedback({
-        type: 'error',
-        text: 'A URL deve começar com https://script.google.com/macros/s/...',
-      });
-      return;
+    if (enabled && trimmedUrl) {
+      const urlError = GoogleSheetsService.validateWebhookUrl(trimmedUrl);
+      if (urlError) {
+        setFeedback({ type: 'error', text: urlError });
+        return;
+      }
     }
 
     GoogleSheetsService.saveConfig({
@@ -86,15 +86,30 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
 
   const handleTest = async () => {
     setFeedback(null);
+    const trimmedUrl = webhookUrl.trim();
+    const urlError = GoogleSheetsService.validateWebhookUrl(trimmedUrl);
+    if (urlError) {
+      setFeedback({ type: 'error', text: urlError });
+      return;
+    }
+
+    // Salva automaticamente ao testar para evitar perda da configuração caso o usuário feche o modal
+    GoogleSheetsService.saveConfig({
+      webhookUrl: trimmedUrl,
+      token: token.trim(),
+      enabled: true,
+    });
+    setEnabled(true);
+
     setIsTesting(true);
-    const res = await GoogleSheetsService.sendTestPing(webhookUrl, token);
+    const res = await GoogleSheetsService.sendTestPing(trimmedUrl, token);
     setLastSync(GoogleSheetsService.getLastSync());
     setIsTesting(false);
 
     if (res.ok) {
       setFeedback({
         type: 'success',
-        text: 'Linha de teste enviada! Verifique a aba "Backup_Solicitacoes" na sua planilha Google.',
+        text: 'Conexão confirmada e configuração salva! Verifique a aba "Backup_Solicitacoes" na sua planilha Google.',
       });
     } else {
       setFeedback({

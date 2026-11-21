@@ -50,7 +50,14 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [sheetsConfigured, setSheetsConfigured] = useState(() => GoogleSheetsService.isConfigured());
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleSheetsChange = () => setSheetsConfigured(GoogleSheetsService.isConfigured());
+    window.addEventListener('sigfrota:gsheets-config-changed', handleSheetsChange);
+    return () => window.removeEventListener('sigfrota:gsheets-config-changed', handleSheetsChange);
+  }, []);
 
   const currentDateFormatted = format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR });
 
@@ -353,7 +360,7 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                   <span className="hidden sm:inline text-emerald-800">Backup Sheets</span>
-                  {GoogleSheetsService.isConfigured() && (
+                  {sheetsConfigured && (
                     <span
                       className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"
                       title="Backup automático ativo"

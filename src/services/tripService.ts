@@ -16,6 +16,8 @@ import { GoogleSheetsService } from './googleSheetsService';
 const STORAGE_KEY_TRIPS = 'sigfrota_trips';
 
 export class TripService {
+  private static pendingSyncPromise: Promise<void> = Promise.resolve();
+
   private static loadTrips(): TripRequest[] {
     const saved = localStorage.getItem(STORAGE_KEY_TRIPS);
     if (saved) {
@@ -218,6 +220,12 @@ export class TripService {
         trip_objective: tripData.trip_objective || '',
         status: tripData.status || 'Pendente de Análise',
         estimated_km: estimatedKm,
+        intermediate_cities: tripData.intermediate_cities,
+        extra_km: tripData.extra_km,
+        allocated_contractor_id: tripData.allocated_contractor_id,
+        allocated_driver_id: tripData.allocated_driver_id,
+        allocated_vehicle_id: tripData.allocated_vehicle_id,
+        travel_report_status: tripData.travel_report_status,
         notes: tripData.notes || '',
         created_at: now,
         updated_at: now,
@@ -228,14 +236,15 @@ export class TripService {
 
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(trips));
 
-    // Sincronização automática com Supabase
-    Promise.resolve(supabase.from('trip_requests').upsert(savedTrip))
-      .then((res: any) => {
+    // Sincronização automática com Supabase (encadeada para evitar race condition com fetchFromSupabase)
+    this.pendingSyncPromise = this.pendingSyncPromise.then(async () => {
+      try {
+        const res: any = await supabase.from('trip_requests').upsert(savedTrip);
         if (res?.error) console.warn('Supabase sync trip_requests:', res.error.message);
-      })
-      .catch((err: any) => {
+      } catch (err: any) {
         console.warn('Supabase sync trip_requests:', err);
-      });
+      }
+    });
 
     // Backup automático no Google Sheets (não bloqueante)
     GoogleSheetsService.syncTripToSheets(savedTrip, tripData.id ? 'update' : 'create').catch((err) => {
@@ -250,6 +259,9 @@ export class TripService {
    */
   static async fetchFromSupabase(): Promise<TripRequest[]> {
     try {
+      // Aguarda qualquer gravação pendente terminar antes de consultar o Supabase
+      await this.pendingSyncPromise;
+
       const { data, error } = await supabase
         .from('trip_requests')
         .select('*')

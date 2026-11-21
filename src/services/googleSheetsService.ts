@@ -78,6 +78,11 @@ export class GoogleSheetsService {
     localStorage.setItem(STORAGE_KEY_URL, config.webhookUrl.trim());
     localStorage.setItem(STORAGE_KEY_TOKEN, config.token.trim());
     localStorage.setItem(STORAGE_KEY_ENABLED, String(config.enabled));
+    try {
+      window.dispatchEvent(new Event('sigfrota:gsheets-config-changed'));
+    } catch {
+      // ignore
+    }
   }
 
   static isConfigured(): boolean {
@@ -101,6 +106,90 @@ export class GoogleSheetsService {
       message,
     };
     localStorage.setItem(STORAGE_KEY_LAST_SYNC, JSON.stringify(entry));
+  }
+
+  static validateWebhookUrl(url: string): string | null {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      return 'Informe a URL do Web App do Google Apps Script.';
+    }
+    if (!trimmed.startsWith('https://script.google.com/')) {
+      return 'A URL deve começar com https://script.google.com/macros/s/...';
+    }
+    if (trimmed.endsWith('/dev')) {
+      return 'Você colou a URL de teste (/dev). Use a URL de produção da implantação que termina com /exec.';
+    }
+    return null;
+  }
+
+  /**
+   * Envia o payload JSON como text/plain (requisição CORS simples, sem preflight OPTIONS)
+   * e verifica a resposta real retornada pelo Google Apps Script.
+   */
+  private static async postToAppsScript(
+    webhookUrl: string,
+    payload: Record<string, unknown>
+  ): Promise<{ ok: boolean; error?: string; fallbackNoCors?: boolean }> {
+    const body = JSON.stringify(payload);
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body,
+      });
+
+      const text = await response.text();
+
+      // Se o Google redirecionou para página de login HTML, faltou liberar "Qualquer pessoa"
+      if (text.trim().startsWith('<')) {
+        return {
+          ok: false,
+          error:
+            'O Google Apps Script retornou uma página HTML em vez de JSON. Verifique se a implantação está publicada com "Quem pode acessar: Qualquer pessoa" e se a URL termina em /exec.',
+        };
+      }
+
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.ok === false) {
+          return {
+            ok: false,
+            error: parsed.error || 'O Apps Script recusou a requisição.',
+          };
+        }
+        return { ok: true };
+      } catch {
+        if (response.ok) {
+          return { ok: true };
+        }
+        return {
+          ok: false,
+          error: `Resposta inesperada do Apps Script (HTTP ${response.status}).`,
+        };
+      }
+    } catch (corsOrNetErr: any) {
+      // Fallback com no-cors caso o navegador/proxy bloqueie a leitura da resposta redirecionada
+      try {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body,
+        });
+        return { ok: true, fallbackNoCors: true };
+      } catch (err: any) {
+        return {
+          ok: false,
+          error: err?.message || corsOrNetErr?.message || 'Falha de rede ao conectar ao Google Sheets.',
+        };
+      }
+    }
   }
 
   static buildTripRow(trip: TripRequest, action: 'create' | 'update' | 'batch'): SheetTripRow {
@@ -191,26 +280,23 @@ export class GoogleSheetsService {
       return { ok: false, skipped: true };
     }
 
-    try {
-      const row = this.buildTripRow(trip, action);
-      await fetch(webhookUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          token,
-          action,
-          trip: row,
-        }),
-      });
+    const row = this.buildTripRow(trip, action);
+    const result = await this.postToAppsScript(webhookUrl, {
+      token,
+      action,
+      trip: row,
+    });
 
-      this.setLastSync('success', `Processo ${trip.process_number} enviado (${action === 'create' ? 'novo' : 'atualizado'}).`);
+    if (result.ok) {
+      this.setLastSync(
+        'success',
+        `Processo ${trip.process_number} salvo no Google Sheets (${action === 'create' ? 'novo' : 'atualizado'}).`
+      );
       return { ok: true };
-    } catch (err: any) {
-      const msg = err?.message || 'Falha de rede ao enviar para o Google Sheets';
+    } else {
+      const msg = result.error || 'Falha ao enviar para o Google Sheets';
       this.setLastSync('error', msg);
+      console.warn('Google Sheets backup sync error:', msg);
       return { ok: false, error: msg };
     }
   }
@@ -222,41 +308,32 @@ export class GoogleSheetsService {
     trips: TripRequest[]
   ): Promise<{ ok: boolean; sent: number; error?: string }> {
     const { webhookUrl, token } = this.getConfig();
-    if (!webhookUrl) {
-      return { ok: false, sent: 0, error: 'URL do Webhook do Google Apps Script não configurada.' };
+    const urlError = this.validateWebhookUrl(webhookUrl);
+    if (urlError) {
+      return { ok: false, sent: 0, error: urlError };
     }
 
     if (trips.length === 0) {
       return { ok: true, sent: 0 };
     }
 
-    try {
-      const rows = trips.map((t) => this.buildTripRow(t, 'batch'));
-      // Envia em blocos de 50 registros para evitar limite de tamanho do payload
-      const chunkSize = 50;
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunk = rows.slice(i, i + chunkSize);
-        await fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8',
-          },
-          body: JSON.stringify({
-            token,
-            action: 'batch',
-            trips: chunk,
-          }),
-        });
+    const rows = trips.map((t) => this.buildTripRow(t, 'batch'));
+    const chunkSize = 50;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const res = await this.postToAppsScript(webhookUrl, {
+        token,
+        action: 'batch',
+        trips: chunk,
+      });
+      if (!res.ok) {
+        this.setLastSync('error', res.error || 'Falha ao enviar backup em lote.');
+        return { ok: false, sent: i, error: res.error };
       }
-
-      this.setLastSync('success', `Backup completo enviado (${trips.length} solicitações).`);
-      return { ok: true, sent: trips.length };
-    } catch (err: any) {
-      const msg = err?.message || 'Falha ao enviar backup em lote';
-      this.setLastSync('error', msg);
-      return { ok: false, sent: 0, error: msg };
     }
+
+    this.setLastSync('success', `Backup completo enviado (${trips.length} solicitações).`);
+    return { ok: true, sent: trips.length };
   }
 
   /**
@@ -267,74 +344,65 @@ export class GoogleSheetsService {
     const webhookUrl = (customUrl ?? config.webhookUrl).trim();
     const token = (customToken ?? config.token).trim();
 
-    if (!webhookUrl || !webhookUrl.startsWith('https://script.google.com/')) {
-      return {
-        ok: false,
-        error: 'Informe uma URL válida do Google Apps Script (começando com https://script.google.com/).',
-      };
+    const urlError = this.validateWebhookUrl(webhookUrl);
+    if (urlError) {
+      return { ok: false, error: urlError };
     }
 
-    try {
-      const nowBr = new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      }).format(new Date());
+    const nowBr = new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    }).format(new Date());
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          token,
-          action: 'test',
-          trip: {
-            id: 'TESTE-CONEXAO',
-            data_backup: nowBr,
-            acao: 'Teste de Conexão',
-            numero_processo: 'TESTE-SIG-FROTA',
-            data_recebimento: nowBr,
-            status_prazo: 'Dentro do Prazo',
-            dias_antecedencia: 0,
-            status: 'Teste OK',
-            natureza_atividade: 'Administrativo',
-            solicitante_nome: 'Teste Automático SIG-FROTA',
-            solicitante_email: 'divtrans@unilab.edu.br',
-            solicitante_telefone: '',
-            unidade_macro: 'PROADI',
-            unidade_requisitante: 'DIVTRANS',
-            cidade_origem: 'Redenção/CE',
-            endereco_origem: 'Campus da Liberdade',
-            cidade_destino: 'Redenção/CE',
-            endereco_destino: 'Teste de Backup Google Sheets',
-            paradas_intermediarias: '',
-            data_partida: nowBr,
-            data_retorno: nowBr,
-            qtd_passageiros: 1,
-            objetivo_viagem: 'Verificação de conexão do backup automático SIG-FROTA.',
-            km_estimado: 0,
-            km_extra: 0,
-            veiculo_alocado: '',
-            motorista_alocado: '',
-            contratada_alocada: '',
-            motivo_indeferimento: '',
-            observacoes: 'Pode apagar esta linha de teste após confirmar o recebimento.',
-          },
-        }),
-      });
+    const res = await this.postToAppsScript(webhookUrl, {
+      token,
+      action: 'test',
+      trip: {
+        id: 'TESTE-CONEXAO',
+        data_backup: nowBr,
+        acao: 'Teste de Conexão',
+        numero_processo: 'TESTE-SIG-FROTA',
+        data_recebimento: nowBr,
+        status_prazo: 'Dentro do Prazo',
+        dias_antecedencia: 0,
+        status: 'Teste OK',
+        natureza_atividade: 'Administrativo',
+        solicitante_nome: 'Teste Automático SIG-FROTA',
+        solicitante_email: 'divtrans@unilab.edu.br',
+        solicitante_telefone: '',
+        unidade_macro: 'PROADI',
+        unidade_requisitante: 'DIVTRANS',
+        cidade_origem: 'Redenção/CE',
+        endereco_origem: 'Campus da Liberdade',
+        cidade_destino: 'Redenção/CE',
+        endereco_destino: 'Teste de Backup Google Sheets',
+        paradas_intermediarias: '',
+        data_partida: nowBr,
+        data_retorno: nowBr,
+        qtd_passageiros: 1,
+        objetivo_viagem: 'Verificação de conexão do backup automático SIG-FROTA.',
+        km_estimado: 0,
+        km_extra: 0,
+        veiculo_alocado: '',
+        motorista_alocado: '',
+        contratada_alocada: '',
+        motivo_indeferimento: '',
+        observacoes: 'Pode apagar esta linha de teste após confirmar o recebimento.',
+      },
+    });
 
-      this.setLastSync('success', 'Teste de conexão enviado para o Google Sheets.');
+    if (res.ok) {
+      this.setLastSync('success', 'Teste de conexão confirmado pelo Google Sheets.');
       return { ok: true };
-    } catch (err: any) {
-      const msg = err?.message || 'Erro ao enviar teste de conexão';
-      this.setLastSync('error', msg);
-      return { ok: false, error: msg };
+    } else {
+      this.setLastSync('error', res.error || 'Erro ao testar conexão.');
+      return { ok: false, error: res.error };
     }
   }
 
   /**
    * Retorna o código Google Apps Script pronto para colar na planilha do Google Sheets.
+   * Totalmente compatível com qualquer versão do runtime Apps Script.
    */
   static getAppsScriptCode(token = ''): string {
     const safeToken = token.replace(/'/g, "\\'");
@@ -346,10 +414,10 @@ export class GoogleSheetsService {
 //   - Quem pode acessar: Qualquer pessoa
 // =========================================================================
 
-const SECRET_TOKEN = '${safeToken}';
-const SHEET_NAME = 'Backup_Solicitacoes';
+var SECRET_TOKEN = '${safeToken}';
+var SHEET_NAME = 'Backup_Solicitacoes';
 
-const HEADERS = [
+var HEADERS = [
   'ID',
   'Data do Backup',
   'Ação',
@@ -383,20 +451,27 @@ const HEADERS = [
 ];
 
 function getOrCreateSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('Abra o Apps Script por dentro da planilha (Extensões > Apps Script).');
+  }
+  var sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
   }
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
-    const headerRange = sheet.getRange(1, 1, 1, HEADERS.length);
+    var headerRange = sheet.getRange(1, 1, 1, HEADERS.length);
     headerRange.setFontWeight('bold');
     headerRange.setBackground('#0f172a');
     headerRange.setFontColor('#ffffff');
     sheet.setFrozenRows(1);
   }
   return sheet;
+}
+
+function safeNum(val, fallback) {
+  return (val !== undefined && val !== null && val !== '') ? val : fallback;
 }
 
 function tripToRow(t) {
@@ -407,7 +482,7 @@ function tripToRow(t) {
     t.numero_processo || '',
     t.data_recebimento || '',
     t.status_prazo || '',
-    t.dias_antecedencia ?? 0,
+    safeNum(t.dias_antecedencia, 0),
     t.status || '',
     t.natureza_atividade || '',
     t.solicitante_nome || '',
@@ -422,10 +497,10 @@ function tripToRow(t) {
     t.paradas_intermediarias || '',
     t.data_partida || '',
     t.data_retorno || '',
-    t.qtd_passageiros ?? 1,
+    safeNum(t.qtd_passageiros, 1),
     t.objetivo_viagem || '',
-    t.km_estimado ?? 0,
-    t.km_extra ?? 0,
+    safeNum(t.km_estimado, 0),
+    safeNum(t.km_extra, 0),
     t.veiculo_alocado || '',
     t.motorista_alocado || '',
     t.contratada_alocada || '',
@@ -435,24 +510,33 @@ function tripToRow(t) {
 }
 
 function upsertRow(sheet, trip) {
-  const rowValues = tripToRow(trip);
-  const lastRow = sheet.getLastRow();
+  var rowValues = tripToRow(trip);
+  var lastRow = sheet.getLastRow();
 
   if (lastRow > 1 && trip.id) {
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
-    const existingIndex = ids.indexOf(trip.id);
-    if (existingIndex !== -1) {
-      sheet.getRange(existingIndex + 2, 1, 1, rowValues.length).setValues([rowValues]);
-      return;
+    var rawIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < rawIds.length; i++) {
+      if (String(rawIds[i][0]) === String(trip.id)) {
+        sheet.getRange(i + 2, 1, 1, rowValues.length).setValues([rowValues]);
+        return;
+      }
     }
   }
 
   sheet.appendRow(rowValues);
 }
 
+function doGet() {
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, service: 'SIG-FROTA Google Sheets Backup' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
-    const payload = JSON.parse(e.postData.contents);
+    lock.waitLock(15000);
+    var payload = JSON.parse(e.postData.contents);
 
     if (SECRET_TOKEN && payload.token !== SECRET_TOKEN) {
       return ContentService
@@ -460,12 +544,12 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    const sheet = getOrCreateSheet();
+    var sheet = getOrCreateSheet();
 
     if (payload.action === 'batch' && Array.isArray(payload.trips)) {
-      payload.trips.forEach(function (trip) {
-        upsertRow(sheet, trip);
-      });
+      for (var i = 0; i < payload.trips.length; i++) {
+        upsertRow(sheet, payload.trips[i]);
+      }
     } else if (payload.trip) {
       upsertRow(sheet, payload.trip);
     }
@@ -477,6 +561,8 @@ function doPost(e) {
     return ContentService
       .createTextOutput(JSON.stringify({ ok: false, error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
 }`;
   }
