@@ -67,9 +67,12 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
     return [];
   })();
 
+  const passengerCols = parsedPassengers.length > 20 ? '1fr 1fr 1fr' : '1fr 1fr';
+  const passengerFontSize = parsedPassengers.length > 20 ? '8.5px' : '9.5px';
+
   const passengerChecklistHTML =
     parsedPassengers.length > 0
-      ? `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; margin-top: 4px; font-size: 9.5px; color: #0f172a;">
+      ? `<div style="display: grid; grid-template-columns: ${passengerCols}; gap: 3px 12px; margin-top: 4px; font-size: ${passengerFontSize}; color: #0f172a;">
           ${parsedPassengers
             .map(
               (p) =>
@@ -382,12 +385,12 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
         </div>
 
         {/* Printable Document Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 text-slate-800 text-xs bg-slate-100/70 print:bg-white print:p-0 print:overflow-visible flex justify-center">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 text-slate-800 text-xs bg-slate-100/70 print:bg-white print:p-0 print:overflow-visible flex justify-center items-start">
           
           {/* Exact Printable A4 Container Rendered with pure HTML */}
           <div 
             id="traffic-order-sheet"
-            className="bg-white rounded-xl shadow-sm border border-slate-300 overflow-hidden print:border-none print:shadow-none"
+            className="bg-white rounded-xl shadow-sm border border-slate-300 h-fit shrink-0 print:border-none print:shadow-none"
             dangerouslySetInnerHTML={{ __html: generateSheetHTML() }}
           />
 

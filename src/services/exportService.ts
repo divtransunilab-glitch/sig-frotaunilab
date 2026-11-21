@@ -403,7 +403,9 @@ export class ExportService {
                     ? trip.passenger_names.split(/\n|;/).map((s) => s.trim()).filter(Boolean)
                     : (trip.passenger_list && trip.passenger_list.length > 0 ? trip.passenger_list : []);
                   if (list.length > 0) {
-                    return `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; margin-top: 4px; font-size: 9.5px; color: #0f172a;">${list.map((p) => `<div style="padding: 2px 0; border-bottom: 1px dotted #cbd5e1;">&#9744; ${p}</div>`).join('')}</div>`;
+                    const cols = list.length > 20 ? '1fr 1fr 1fr' : '1fr 1fr';
+                    const fSize = list.length > 20 ? '8.5px' : '9.5px';
+                    return `<div style="display: grid; grid-template-columns: ${cols}; gap: 3px 12px; margin-top: 4px; font-size: ${fSize}; color: #0f172a;">${list.map((p) => `<div style="padding: 2px 0; border-bottom: 1px dotted #cbd5e1;">&#9744; ${p}</div>`).join('')}</div>`;
                   }
                   return `<span style="color: #334155;">${trip.requester_name} e comitiva institucional (${trip.passenger_count} pessoas)</span>`;
                 })()}
