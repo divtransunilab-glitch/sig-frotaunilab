@@ -109,7 +109,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
     if (res.ok) {
       setFeedback({
         type: 'success',
-        text: 'Conexão confirmada e configuração salva! Verifique a aba "Backup_Solicitacoes" na sua planilha Google.',
+        text: `Conexão confirmada e configuração salva! Confira a linha de teste na aba "${res.tabName || 'mês atual'}" da sua planilha Google.`,
       });
     } else {
       setFeedback({
@@ -144,7 +144,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
     if (res.ok) {
       setFeedback({
         type: 'success',
-        text: `Backup completo enviado (${res.sent} solicitações). Confira a aba "Backup_Solicitacoes" na planilha.`,
+        text: `Backup completo enviado (${res.sent} solicitações). Cada registro foi salvo automaticamente na aba do seu respectivo mês.`,
       });
       onNotify(`Backup de ${res.sent} solicitações enviado ao Google Sheets!`, 'success');
     } else {
@@ -200,11 +200,11 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs">
           <p className="text-slate-600 leading-relaxed">
-            Sempre que uma solicitação de veículo for <strong>salva ou atualizada</strong> no sistema, uma cópia completa dos dados será enviada automaticamente para a sua planilha do Google Sheets na aba{' '}
+            Sempre que uma solicitação de veículo for <strong>salva ou atualizada</strong> no sistema, uma cópia completa dos dados será enviada automaticamente para a aba do mês correspondente à data da demanda (ex.:{' '}
             <code className="px-1.5 py-0.5 rounded bg-slate-100 text-navy-900 font-semibold">
-              Backup_Solicitacoes
+              11-2026 (Novembro)
             </code>
-            .
+            ).
           </p>
 
           {feedback && (

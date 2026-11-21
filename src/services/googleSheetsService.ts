@@ -2,11 +2,27 @@ import { TripRequest } from '../types';
 import { DistanceService } from './distanceService';
 import { FleetService } from './fleetService';
 import { safeFormatDate } from '../utils/dateUtils';
+import { parseISO, isValid, getMonth, getYear } from 'date-fns';
 
 const STORAGE_KEY_URL = 'sigfrota_gsheets_webhook_url';
 const STORAGE_KEY_TOKEN = 'sigfrota_gsheets_token';
 const STORAGE_KEY_ENABLED = 'sigfrota_gsheets_enabled';
 const STORAGE_KEY_LAST_SYNC = 'sigfrota_gsheets_last_sync';
+
+const MONTH_NAMES_PT = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
 
 export interface GoogleSheetsConfig {
   webhookUrl: string;
@@ -22,6 +38,7 @@ export interface GoogleSheetsLastSync {
 
 export interface SheetTripRow {
   id: string;
+  aba_mes: string;
   data_backup: string;
   acao: string;
   numero_processo: string;
@@ -123,13 +140,34 @@ export class GoogleSheetsService {
   }
 
   /**
+   * Calcula o nome da aba mensal com base na data da demanda (departure_datetime).
+   * Exemplo: "11-2026 (Novembro)"
+   */
+  static getMonthTabName(dateStr?: string): string {
+    try {
+      const d = dateStr ? parseISO(dateStr) : new Date();
+      if (isValid(d)) {
+        const monthIdx = getMonth(d);
+        const monthNum = String(monthIdx + 1).padStart(2, '0');
+        const year = getYear(d);
+        return `${monthNum}-${year} (${MONTH_NAMES_PT[monthIdx]})`;
+      }
+    } catch {
+      // fallback
+    }
+    const now = new Date();
+    const mIdx = getMonth(now);
+    return `${String(mIdx + 1).padStart(2, '0')}-${getYear(now)} (${MONTH_NAMES_PT[mIdx]})`;
+  }
+
+  /**
    * Envia o payload JSON como text/plain (requisição CORS simples, sem preflight OPTIONS)
-   * e verifica a resposta real retornada pelo Google Apps Script.
+   * e valida a resposta real do Google Apps Script sem mascarar erros 401/permissão.
    */
   private static async postToAppsScript(
     webhookUrl: string,
     payload: Record<string, unknown>
-  ): Promise<{ ok: boolean; error?: string; fallbackNoCors?: boolean }> {
+  ): Promise<{ ok: boolean; error?: string }> {
     const body = JSON.stringify(payload);
 
     try {
@@ -144,12 +182,11 @@ export class GoogleSheetsService {
 
       const text = await response.text();
 
-      // Se o Google redirecionou para página de login HTML, faltou liberar "Qualquer pessoa"
-      if (text.trim().startsWith('<')) {
+      if (response.status === 401 || response.status === 403 || text.trim().startsWith('<')) {
         return {
           ok: false,
           error:
-            'O Google Apps Script retornou uma página HTML em vez de JSON. Verifique se a implantação está publicada com "Quem pode acessar: Qualquer pessoa" e se a URL termina em /exec.',
+            'Acesso negado pelo Google Apps Script (HTTP 401). Na implantação do App da Web, "Quem pode acessar" precisa estar como "Qualquer pessoa" (e não "Somente eu" ou "Qualquer pessoa na UNILAB"). Se sua conta institucional não liberar "Qualquer pessoa", crie a planilha em uma conta @gmail.com.',
         };
       }
 
@@ -171,24 +208,12 @@ export class GoogleSheetsService {
           error: `Resposta inesperada do Apps Script (HTTP ${response.status}).`,
         };
       }
-    } catch (corsOrNetErr: any) {
-      // Fallback com no-cors caso o navegador/proxy bloqueie a leitura da resposta redirecionada
-      try {
-        await fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8',
-          },
-          body,
-        });
-        return { ok: true, fallbackNoCors: true };
-      } catch (err: any) {
-        return {
-          ok: false,
-          error: err?.message || corsOrNetErr?.message || 'Falha de rede ao conectar ao Google Sheets.',
-        };
-      }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error:
+          'Bloqueio de permissão/CORS no Google Apps Script (geralmente HTTP 401). Reimplante o App da Web com "Executar como: Eu" e "Quem pode acessar: Qualquer pessoa". Se estiver em conta institucional (@unilab.edu.br), use uma conta @gmail.com caso o domínio bloqueie acesso público.',
+      };
     }
   }
 
@@ -231,8 +256,11 @@ export class GoogleSheetsService {
         ? 'Atualização'
         : 'Backup em Lote';
 
+    const abaMes = this.getMonthTabName(trip.departure_datetime || trip.received_at);
+
     return {
       id: trip.id,
+      aba_mes: abaMes,
       data_backup: nowBr,
       acao: actionLabel,
       numero_processo: trip.process_number || '',
@@ -268,7 +296,7 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Envia uma solicitação (nova ou atualizada) para a planilha Google Sheets via Apps Script Webhook.
+   * Envia uma solicitação (nova ou atualizada) para a aba mensal correspondente no Google Sheets.
    * Executa de forma não bloqueante para nunca impedir o salvamento principal.
    */
   static async syncTripToSheets(
@@ -290,7 +318,7 @@ export class GoogleSheetsService {
     if (result.ok) {
       this.setLastSync(
         'success',
-        `Processo ${trip.process_number} salvo no Google Sheets (${action === 'create' ? 'novo' : 'atualizado'}).`
+        `Processo ${trip.process_number} salvo na aba "${row.aba_mes}" (${action === 'create' ? 'novo' : 'atualizado'}).`
       );
       return { ok: true };
     } else {
@@ -302,7 +330,7 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Envia todas as solicitações existentes em lote para criar um backup completo na planilha.
+   * Envia todas as solicitações existentes em lote, separando automaticamente cada uma na aba do seu mês.
    */
   static async syncAllTripsToSheets(
     trips: TripRequest[]
@@ -332,14 +360,14 @@ export class GoogleSheetsService {
       }
     }
 
-    this.setLastSync('success', `Backup completo enviado (${trips.length} solicitações).`);
+    this.setLastSync('success', `Backup completo enviado (${trips.length} solicitações separadas por mês).`);
     return { ok: true, sent: trips.length };
   }
 
   /**
-   * Envia um registro de teste para validar a integração com a planilha.
+   * Envia um registro de teste na aba do mês atual para validar a integração com a planilha.
    */
-  static async sendTestPing(customUrl?: string, customToken?: string): Promise<{ ok: boolean; error?: string }> {
+  static async sendTestPing(customUrl?: string, customToken?: string): Promise<{ ok: boolean; tabName?: string; error?: string }> {
     const config = this.getConfig();
     const webhookUrl = (customUrl ?? config.webhookUrl).trim();
     const token = (customToken ?? config.token).trim();
@@ -354,11 +382,14 @@ export class GoogleSheetsService {
       timeStyle: 'medium',
     }).format(new Date());
 
+    const tabName = this.getMonthTabName();
+
     const res = await this.postToAppsScript(webhookUrl, {
       token,
       action: 'test',
       trip: {
         id: 'TESTE-CONEXAO',
+        aba_mes: tabName,
         data_backup: nowBr,
         acao: 'Teste de Conexão',
         numero_processo: 'TESTE-SIG-FROTA',
@@ -392,8 +423,8 @@ export class GoogleSheetsService {
     });
 
     if (res.ok) {
-      this.setLastSync('success', 'Teste de conexão confirmado pelo Google Sheets.');
-      return { ok: true };
+      this.setLastSync('success', `Teste confirmado! Linha gravada na aba "${tabName}".`);
+      return { ok: true, tabName };
     } else {
       this.setLastSync('error', res.error || 'Erro ao testar conexão.');
       return { ok: false, error: res.error };
@@ -402,12 +433,12 @@ export class GoogleSheetsService {
 
   /**
    * Retorna o código Google Apps Script pronto para colar na planilha do Google Sheets.
-   * Totalmente compatível com qualquer versão do runtime Apps Script.
+   * Separa automaticamente as solicitações em abas por mês com base na data da demanda.
    */
   static getAppsScriptCode(token = ''): string {
     const safeToken = token.replace(/'/g, "\\'");
     return `// =========================================================================
-// SIG-FROTA UNILAB — Backup Automático no Google Sheets
+// SIG-FROTA UNILAB — Backup Automático no Google Sheets (Abas por Mês)
 // Cole este código em: Planilha Google > Extensões > Apps Script
 // Depois clique em: Implantar > Nova implantação > App da Web
 //   - Executar como: Eu
@@ -415,7 +446,6 @@ export class GoogleSheetsService {
 // =========================================================================
 
 var SECRET_TOKEN = '${safeToken}';
-var SHEET_NAME = 'Backup_Solicitacoes';
 
 var HEADERS = [
   'ID',
@@ -450,14 +480,37 @@ var HEADERS = [
   'Observações'
 ];
 
-function getOrCreateSheet() {
+var MESES_PT = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+function getTabNameForTrip(trip) {
+  if (trip && trip.aba_mes) {
+    return String(trip.aba_mes).replace(/[\\\\\\/\\?\\*\\[\\]:]/g, '-').substring(0, 90);
+  }
+  if (trip && trip.data_partida) {
+    var m = String(trip.data_partida).match(/(\\d{2})\\/(\\d{2})\\/(\\d{4})/);
+    if (m) {
+      var idx = parseInt(m[2], 10) - 1;
+      var nomeMes = MESES_PT[idx] || m[2];
+      return m[2] + '-' + m[3] + ' (' + nomeMes + ')';
+    }
+  }
+  var now = new Date();
+  var mm = ('0' + (now.getMonth() + 1)).slice(-2);
+  return mm + '-' + now.getFullYear() + ' (' + MESES_PT[now.getMonth()] + ')';
+}
+
+function getOrCreateSheet(tabName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     throw new Error('Abra o Apps Script por dentro da planilha (Extensões > Apps Script).');
   }
-  var sheet = ss.getSheetByName(SHEET_NAME);
+  var name = tabName || 'Backup_Solicitacoes';
+  var sheet = ss.getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
+    sheet = ss.insertSheet(name);
   }
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
@@ -509,7 +562,9 @@ function tripToRow(t) {
   ];
 }
 
-function upsertRow(sheet, trip) {
+function upsertTrip(trip) {
+  var tabName = getTabNameForTrip(trip);
+  var sheet = getOrCreateSheet(tabName);
   var rowValues = tripToRow(trip);
   var lastRow = sheet.getLastRow();
 
@@ -518,17 +573,18 @@ function upsertRow(sheet, trip) {
     for (var i = 0; i < rawIds.length; i++) {
       if (String(rawIds[i][0]) === String(trip.id)) {
         sheet.getRange(i + 2, 1, 1, rowValues.length).setValues([rowValues]);
-        return;
+        return tabName;
       }
     }
   }
 
   sheet.appendRow(rowValues);
+  return tabName;
 }
 
 function doGet() {
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, service: 'SIG-FROTA Google Sheets Backup' }))
+    .createTextOutput(JSON.stringify({ ok: true, service: 'SIG-FROTA Google Sheets Backup (Abas Mensais)' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -544,14 +600,12 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    var sheet = getOrCreateSheet();
-
     if (payload.action === 'batch' && Array.isArray(payload.trips)) {
       for (var i = 0; i < payload.trips.length; i++) {
-        upsertRow(sheet, payload.trips[i]);
+        upsertTrip(payload.trips[i]);
       }
     } else if (payload.trip) {
-      upsertRow(sheet, payload.trip);
+      upsertTrip(payload.trip);
     }
 
     return ContentService
