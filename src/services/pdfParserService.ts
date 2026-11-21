@@ -2,6 +2,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { DistanceService } from './distanceService';
 import { ActivityType, MacroUnit, City } from '../types';
+import { toTitleCasePtBr } from '../utils/textUtils';
 
 if (typeof window !== 'undefined') {
   try {
@@ -519,6 +520,15 @@ export class PdfParserService {
         result.responsible_names = respList.join('; ');
       }
     }
+
+    // Padroniza textos que vieram todos em MAIÚSCULAS para Title Case (primeira letra maiúscula de cada palavra)
+    if (result.requester_name) result.requester_name = toTitleCasePtBr(result.requester_name, true);
+    if (result.requesting_unit) result.requesting_unit = toTitleCasePtBr(result.requesting_unit, true);
+    if (result.origin_address) result.origin_address = toTitleCasePtBr(result.origin_address, true);
+    if (result.destination_address) result.destination_address = toTitleCasePtBr(result.destination_address, true);
+    if (result.trip_objective) result.trip_objective = toTitleCasePtBr(result.trip_objective, true);
+    if (result.passenger_names) result.passenger_names = toTitleCasePtBr(result.passenger_names, true);
+    if (result.responsible_names) result.responsible_names = toTitleCasePtBr(result.responsible_names, true);
 
     return result;
   }

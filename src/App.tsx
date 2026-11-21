@@ -566,6 +566,7 @@ export function App() {
         }}
         onSaveTrip={handleSaveNewTrip}
         editingTrip={editingTrip}
+        existingTrips={trips}
       />
 
       <QuickDispatchModal

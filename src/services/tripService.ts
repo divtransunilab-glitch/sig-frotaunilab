@@ -12,6 +12,7 @@ import { ConflictDetector } from './conflictDetector';
 import { differenceInDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import { supabase } from './supabaseClient';
 import { GoogleSheetsService } from './googleSheetsService';
+import { toTitleCasePtBr } from '../utils/textUtils';
 
 const STORAGE_KEY_TRIPS = 'sigfrota_trips';
 
@@ -208,7 +209,30 @@ export class TripService {
   /**
    * Salva ou atualiza uma solicitação de viagem
    */
-  static saveTrip(tripData: Partial<TripRequest>): TripRequest {
+  static saveTrip(rawTripData: Partial<TripRequest>): TripRequest {
+    // Padroniza textos que vieram todos em MAIÚSCULAS para Title Case (primeira letra maiúscula de cada palavra)
+    const tripData: Partial<TripRequest> = {
+      ...rawTripData,
+      ...(rawTripData.requester_name !== undefined
+        ? { requester_name: toTitleCasePtBr(rawTripData.requester_name, true) }
+        : {}),
+      ...(rawTripData.requesting_unit !== undefined
+        ? { requesting_unit: toTitleCasePtBr(rawTripData.requesting_unit, true) }
+        : {}),
+      ...(rawTripData.origin_address !== undefined
+        ? { origin_address: toTitleCasePtBr(rawTripData.origin_address, true) }
+        : {}),
+      ...(rawTripData.destination_address !== undefined
+        ? { destination_address: toTitleCasePtBr(rawTripData.destination_address, true) }
+        : {}),
+      ...(rawTripData.trip_objective !== undefined
+        ? { trip_objective: toTitleCasePtBr(rawTripData.trip_objective, true) }
+        : {}),
+      ...(rawTripData.passenger_names !== undefined
+        ? { passenger_names: toTitleCasePtBr(rawTripData.passenger_names, true) }
+        : {}),
+    };
+
     const trips = this.loadTrips();
     const now = new Date().toISOString();
 

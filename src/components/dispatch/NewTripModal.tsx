@@ -41,6 +41,7 @@ interface NewTripModalProps {
   onClose: () => void;
   onSaveTrip: (tripData: Partial<TripRequest>) => void;
   editingTrip?: TripRequest | null;
+  existingTrips?: TripRequest[];
 }
 
 const MACRO_UNITS: MacroUnit[] = [
@@ -81,6 +82,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   onClose,
   onSaveTrip,
   editingTrip = null,
+  existingTrips,
 }) => {
   if (!isOpen) return null;
 
@@ -351,12 +353,42 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     }
   };
 
+  // Verificação em tempo real de unicidade do Nº do Processo SEI
+  const tripsPool = existingTrips && existingTrips.length > 0 ? existingTrips : TripService.getTrips();
+  const normalizedProcInput = processNumber.trim().replace(/\s+/g, ' ').toLowerCase();
+  const duplicateProcessTrip = normalizedProcInput
+    ? tripsPool.find(
+        (t) =>
+          t.id !== editingTrip?.id &&
+          (t.process_number || '').trim().replace(/\s+/g, ' ').toLowerCase() === normalizedProcInput
+      ) || null
+    : null;
+
+  const getCityLabelById = (cityId?: string) => {
+    if (!cityId) return 'Não informada';
+    const found = cities.find((c) => c.id === cityId);
+    return found ? `${found.name}/${found.state}` : cityId;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validação estrita dos campos obrigatórios (até Quantidade de Passageiros)
     if (!processNumber.trim()) {
       alert('Informe o número do processo.');
+      return;
+    }
+    if (duplicateProcessTrip) {
+      const origDep = safeFormatDate(duplicateProcessTrip.departure_datetime, "dd/MM/yyyy 'às' HH:mm", '-');
+      const origDest = getCityLabelById(duplicateProcessTrip.destination_city_id);
+      alert(
+        `ATENÇÃO: O processo SEI "${duplicateProcessTrip.process_number}" já está cadastrado no sistema!\n\n` +
+          `• Solicitante: ${duplicateProcessTrip.requester_name} (${duplicateProcessTrip.macro_unit})\n` +
+          `• Destino: ${origDest}\n` +
+          `• Data de Saída: ${origDep}\n` +
+          `• Status atual: ${duplicateProcessTrip.status}\n\n` +
+          `Como cada número de processo é único, não é possível salvá-lo novamente. Caso precise alterar dados, abra o processo existente na fila e clique em "Editar".`
+      );
       return;
     }
     if (!receivedDate || !receivedTime) {
@@ -534,6 +566,51 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
               >
                 &times;
               </button>
+            </div>
+          )}
+
+          {/* Alerta de Processo SEI Duplicado */}
+          {duplicateProcessTrip && (
+            <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl text-rose-950 text-xs space-y-2 shadow-xs animate-fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1 flex-1">
+                  <div className="font-extrabold text-rose-900">
+                    Este número de processo SEI já está cadastrado no sistema!
+                  </div>
+                  <p className="text-[11px] text-rose-800 leading-relaxed">
+                    Como todo processo é único, não será permitido salvar novamente. Veja o resumo do cadastro original:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px] bg-white/80 p-2.5 rounded-xl border border-rose-200">
+                    <div>
+                      <span className="text-rose-600 font-semibold">Processo:</span>{' '}
+                      <strong className="font-mono text-rose-950">{duplicateProcessTrip.process_number}</strong>
+                    </div>
+                    <div>
+                      <span className="text-rose-600 font-semibold">Status:</span>{' '}
+                      <strong className="text-rose-950">{duplicateProcessTrip.status}</strong>
+                    </div>
+                    <div>
+                      <span className="text-rose-600 font-semibold">Solicitante:</span>{' '}
+                      <strong className="text-rose-950">
+                        {duplicateProcessTrip.requester_name} ({duplicateProcessTrip.macro_unit})
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-rose-600 font-semibold">Destino:</span>{' '}
+                      <strong className="text-rose-950">
+                        {getCityLabelById(duplicateProcessTrip.destination_city_id)}
+                      </strong>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-rose-600 font-semibold">Saída prevista:</span>{' '}
+                      <strong className="text-rose-950">
+                        {safeFormatDate(duplicateProcessTrip.departure_datetime, "dd/MM/yyyy 'às' HH:mm", '-')}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
