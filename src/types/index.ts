@@ -202,6 +202,7 @@ export type AuditAction =
   | 'Agrupamento de Viagem (Carona Solidária)'
   | 'Autenticação no Sistema'
   | 'Alteração de Senha'
+  | 'Configuração de Backup Google Sheets'
   | 'Reset de Base de Dados';
 
 export interface AuditLog {

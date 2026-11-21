@@ -19,6 +19,8 @@ import { ImportSpreadsheetModal } from './components/dispatch/ImportSpreadsheetM
 import { TrafficOrderModal } from './components/dispatch/TrafficOrderModal';
 import { TripGroupingModal } from './components/dispatch/TripGroupingModal';
 import { ChangePasswordModal } from './components/common/ChangePasswordModal';
+import { GoogleSheetsConfigModal } from './components/common/GoogleSheetsConfigModal';
+import { GoogleSheetsService } from './services/googleSheetsService';
 import { DistanceMatrixView } from './components/matrix/DistanceMatrixView';
 import { TravelReportView } from './components/postTrip/TravelReportView';
 import { FleetManagement } from './components/fleet/FleetManagement';
@@ -47,6 +49,7 @@ export function App() {
   const [isTrafficOrderModalOpen, setIsTrafficOrderModalOpen] = useState(false);
   const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
 
   // Toast / Notification
@@ -280,7 +283,8 @@ export function App() {
       details: `Nova solicitação aberta por ${saved.requester_name} (${saved.macro_unit}) com destino ${saved.destination_city_id}. Prazo: ${saved.status_deadline} (${saved.advance_days}d).`,
     });
 
-    showToast(`Processo ${saved.process_number} cadastrado com sucesso!`, 'success');
+    const sheetsNote = GoogleSheetsService.isConfigured() ? ' (backup enviado ao Google Sheets)' : '';
+    showToast(`Processo ${saved.process_number} cadastrado com sucesso!${sheetsNote}`, 'success');
 
     // 3. Sincroniza em background
     loadTrips();
@@ -352,6 +356,7 @@ export function App() {
         onResetData={handleResetData}
         onOpenImportModal={() => setIsImportModalOpen(true)}
         onOpenChangePasswordModal={() => setIsChangePasswordModalOpen(true)}
+        onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -537,6 +542,14 @@ export function App() {
         isOpen={isChangePasswordModalOpen}
         onClose={() => setIsChangePasswordModalOpen(false)}
         onSuccess={(msg) => showToast(msg, 'success')}
+      />
+
+      {/* Google Sheets Backup Configuration Modal */}
+      <GoogleSheetsConfigModal
+        isOpen={isGoogleSheetsModalOpen}
+        onClose={() => setIsGoogleSheetsModalOpen(false)}
+        trips={trips}
+        onNotify={(msg, type) => showToast(msg, type || 'success')}
       />
 
     </div>

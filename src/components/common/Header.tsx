@@ -11,11 +11,13 @@ import {
   Clock,
   ChevronRight,
   X,
-  Building
+  Building,
+  FileSpreadsheet
 } from 'lucide-react';
 import { format, parseISO, isValid, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TripRequest } from '../../types';
+import { GoogleSheetsService } from '../../services/googleSheetsService';
 
 interface HeaderProps {
   activeTab: string;
@@ -29,6 +31,7 @@ interface HeaderProps {
   onResetData?: () => void;
   onOpenImportModal?: () => void;
   onOpenChangePasswordModal?: () => void;
+  onOpenGoogleSheetsModal?: () => void;
   onLogout?: () => void;
 }
 
@@ -43,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDispatchModal,
   onOpenImportModal,
   onOpenChangePasswordModal,
+  onOpenGoogleSheetsModal,
   onLogout,
 }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -340,6 +344,23 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <div className="text-[10px] text-slate-500 font-medium">DIVTRANS / PROADI</div>
               </div>
+
+              {onOpenGoogleSheetsModal && (
+                <button
+                  onClick={onOpenGoogleSheetsModal}
+                  title="Configurar backup automático no Google Sheets"
+                  className="ml-1 p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold relative"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline text-emerald-800">Backup Sheets</span>
+                  {GoogleSheetsService.isConfigured() && (
+                    <span
+                      className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"
+                      title="Backup automático ativo"
+                    />
+                  )}
+                </button>
+              )}
 
               {onOpenChangePasswordModal && (
                 <button

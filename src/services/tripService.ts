@@ -11,6 +11,7 @@ import { DistanceService } from './distanceService';
 import { ConflictDetector } from './conflictDetector';
 import { differenceInDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import { supabase } from './supabaseClient';
+import { GoogleSheetsService } from './googleSheetsService';
 
 const STORAGE_KEY_TRIPS = 'sigfrota_trips';
 
@@ -235,6 +236,11 @@ export class TripService {
       .catch((err: any) => {
         console.warn('Supabase sync trip_requests:', err);
       });
+
+    // Backup automático no Google Sheets (não bloqueante)
+    GoogleSheetsService.syncTripToSheets(savedTrip, tripData.id ? 'update' : 'create').catch((err) => {
+      console.warn('Google Sheets backup sync:', err);
+    });
 
     return savedTrip;
   }
