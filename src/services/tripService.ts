@@ -18,6 +18,54 @@ const STORAGE_KEY_TRIPS = 'sigfrota_trips';
 export class TripService {
   private static pendingSyncPromise: Promise<void> = Promise.resolve();
 
+  /**
+   * Filtra e sanitiza apenas as colunas existentes na tabela `trip_requests` do Supabase,
+   * removendo campos extras exclusivos do frontend (ex.: intermediate_cities, extra_km)
+   * que fariam o PostgREST rejeitar o upsert.
+   */
+  private static toSupabaseRow(trip: TripRequest): Record<string, unknown> {
+    return {
+      id: trip.id,
+      process_number: trip.process_number,
+      received_at: trip.received_at,
+      advance_days: trip.advance_days ?? 0,
+      status_deadline: trip.status_deadline,
+      activity_type: trip.activity_type,
+      requester_name: trip.requester_name || '',
+      requester_email: trip.requester_email || 'solicitante@unilab.edu.br',
+      requester_phone: trip.requester_phone || null,
+      macro_unit: trip.macro_unit,
+      requesting_unit: trip.requesting_unit || '',
+      origin_city_id: trip.origin_city_id,
+      origin_address: trip.origin_address || null,
+      destination_city_id: trip.destination_city_id,
+      destination_address: trip.destination_address || null,
+      departure_datetime: trip.departure_datetime,
+      return_datetime: trip.return_datetime,
+      passenger_count: trip.passenger_count ?? 1,
+      passenger_names: trip.passenger_names || null,
+      passenger_list: trip.passenger_list ?? null,
+      trip_objective: trip.trip_objective || null,
+      allocated_contractor_id: trip.allocated_contractor_id || null,
+      allocated_driver_id: trip.allocated_driver_id || null,
+      allocated_vehicle_id: trip.allocated_vehicle_id || null,
+      status: trip.status,
+      rejection_reason: trip.rejection_reason || null,
+      rejection_notes: trip.rejection_notes || null,
+      travel_report_status: trip.travel_report_status || null,
+      estimated_km: trip.estimated_km ?? 0,
+      real_km: trip.real_km ?? null,
+      fuel_liters: trip.fuel_liters ?? null,
+      toll_amount: trip.toll_amount ?? null,
+      report_notes: trip.report_notes || null,
+      report_submitted_at: trip.report_submitted_at || null,
+      report_approved_at: trip.report_approved_at || null,
+      notes: trip.notes || null,
+      created_at: trip.created_at,
+      updated_at: trip.updated_at,
+    };
+  }
+
   private static loadTrips(): TripRequest[] {
     const saved = localStorage.getItem(STORAGE_KEY_TRIPS);
     if (saved) {
@@ -237,12 +285,13 @@ export class TripService {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(trips));
 
     // Sincronização automática com Supabase (encadeada para evitar race condition com fetchFromSupabase)
+    const supabasePayload = this.toSupabaseRow(savedTrip);
     this.pendingSyncPromise = this.pendingSyncPromise.then(async () => {
       try {
-        const res: any = await supabase.from('trip_requests').upsert(savedTrip);
-        if (res?.error) console.warn('Supabase sync trip_requests:', res.error.message);
+        const res: any = await supabase.from('trip_requests').upsert(supabasePayload);
+        if (res?.error) console.error('Supabase sync trip_requests error:', res.error.message, res.error);
       } catch (err: any) {
-        console.warn('Supabase sync trip_requests:', err);
+        console.error('Supabase sync trip_requests exception:', err);
       }
     });
 
