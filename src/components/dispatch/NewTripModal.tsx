@@ -267,6 +267,10 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       }
       if (extracted.departure_date) fieldsFound.push(`Saída: ${extracted.departure_date}`);
       if (extracted.passenger_count) fieldsFound.push(`${extracted.passenger_count} Passageiros`);
+      if (extracted.passenger_names) {
+        const listedCount = extracted.passenger_names.split(/\n|;/).filter((s) => s.trim()).length;
+        fieldsFound.push(`Relação c/ ${listedCount} nome(s)`);
+      }
       if (extracted.intermediate_cities && extracted.intermediate_cities.length > 0) {
         fieldsFound.push(`${extracted.intermediate_cities.length} Parada(s)`);
       }

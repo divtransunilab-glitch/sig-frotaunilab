@@ -433,21 +433,65 @@ export class PdfParserService {
       }
     }
 
-    // 9. RELAÇÃO DE PASSAGEIROS (NOMES E CONTAGEM)
-    const relacaoPassageiros = rawText.match(/4\.\s*RELAÇÃO\s+DE\s+PASSAGEIROS[\s\S]*$/i);
+    // 9. RELAÇÃO DE PASSAGEIROS (NOMES E CONTAGEM — suporta células quebradas em múltiplas linhas no PDF SEI)
+    const relacaoPassageiros = rawText.match(
+      /4\.\s*RELA[ÇC][ÃA]O\s+DE\s+PASSAGEIROS([\s\S]*?)(?=Documento\s+assinado\s+eletronicamente|A\s+autenticidade\s+deste\s+documento|\nNotas\b|Refer[êe]ncia:\s*Processo|$)/i
+    );
     if (relacaoPassageiros) {
-      const lines = relacaoPassageiros[0].split('\n').map((l) => l.trim());
-      const names: string[] = [];
+      const headerNoise =
+        /^(Passageiro|n[ºo°]|Comunidade|Interna\s+ou|Externa\??|Especifica[çc][ãa]o|\(em\s+caso\s+de|Externa\)|Nome\s+do\s+Passageiro|SIAPE|\/\s*Matr[íi]cula|Matr[íi]cula|\(Apenas\s+p\/|Servidor\s+ou|Discente\)|Telefone|de\s+Contato|\(c\/\s*DDD\)|---\s*P[ÁA]GINA\s+\d+\s*---|Formul[áa]rio\s*-|SEI\s+\d)/i;
+
+      const lines = relacaoPassageiros[1]
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !headerNoise.test(l));
+
+      const grouped: Array<{ num: number; parts: string[] }> = [];
+      let current: { num: number; parts: string[] } | null = null;
+      let lastNum = 0;
+
       for (const line of lines) {
-        const match = line.match(/^(\d{1,2})\s+([A-ZÀ-Ú\s]{5,50}?)(?:\s+\d{6,12}|\s*\+?\d{2,3}|$)/);
-        if (match && !/Passageiro|Comunidade|Nome/i.test(match[2])) {
-          const pNum = match[1];
-          const pName = match[2].trim();
-          names.push(`${pNum}. ${pName}`);
+        const rowStart = line.match(/^(\d{1,2})(?:\s+(.*))?$/);
+        if (rowStart) {
+          const num = parseInt(rowStart[1], 10);
+          if (num >= 1 && num <= 65 && num > lastNum && num <= lastNum + 3) {
+            if (current) grouped.push(current);
+            lastNum = num;
+            current = { num, parts: [] };
+            if (rowStart[2]) {
+              current.parts.push(rowStart[2]);
+            }
+            continue;
+          }
+        }
+        if (current) {
+          current.parts.push(line);
         }
       }
+      if (current) grouped.push(current);
+
+      const names: string[] = [];
+      for (const p of grouped) {
+        const nameParts: string[] = [];
+        for (const part of p.parts) {
+          const cleaned = part
+            .replace(/\b(?:Comunidade\s+)?(?:Interna|Externa)\b/gi, '')
+            .replace(/\+?\d[\d\s().\/-]{4,}/g, '')
+            .replace(/\b\d{2,12}\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (cleaned.length >= 2 && /[A-Za-zÀ-ÿ]/.test(cleaned)) {
+            nameParts.push(cleaned);
+          }
+        }
+        const fullName = nameParts.join(' ').replace(/\s+/g, ' ').trim();
+        if (fullName.length >= 3) {
+          names.push(`${p.num}. ${fullName}`);
+        }
+      }
+
       if (names.length > 0) {
-        result.passenger_names = names.join('; ');
+        result.passenger_names = names.join('\n');
         if (!result.passenger_count) {
           result.passenger_count = names.length;
         }

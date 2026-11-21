@@ -54,6 +54,31 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
   const veiculoCapacidade = vehicle ? `${vehicle.capacity} passageiros` : `${trip.passenger_count} passageiros`;
   const contratadaNome = contractor ? contractor.name : 'Frota Oficial / Terceirizada UNILAB';
 
+  const parsedPassengers: string[] = (() => {
+    if (trip.passenger_names && trip.passenger_names.trim()) {
+      return trip.passenger_names
+        .split(/\n|;/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (trip.passenger_list && trip.passenger_list.length > 0) {
+      return trip.passenger_list;
+    }
+    return [];
+  })();
+
+  const passengerChecklistHTML =
+    parsedPassengers.length > 0
+      ? `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; margin-top: 4px; font-size: 9.5px; color: #0f172a;">
+          ${parsedPassengers
+            .map(
+              (p) =>
+                `<div style="padding: 2px 0; border-bottom: 1px dotted #cbd5e1;">&#9744; ${p}</div>`
+            )
+            .join('')}
+        </div>`
+      : `<span style="color: #334155;">${trip.requester_name} e comitiva institucional (${trip.passenger_count} pessoas)</span>`;
+
   const generateSheetHTML = () => `
     <div style="width: 760px; background-color: #ffffff; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; box-sizing: border-box; line-height: 1.35;">
 
@@ -173,9 +198,9 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
             <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Lotação Solicitada:</span> <strong style="color: #0f172a;">${trip.passenger_count} passageiro(s)</strong></td>
           </tr>
           <tr style="border-top: 1px solid #e2e8f0;">
-            <td colspan="2" style="padding: 5px 8px;">
-              <span style="color: #64748b; font-weight: 600;">Relação de Passageiros:</span> 
-              <span style="color: #334155;">${trip.passenger_list && trip.passenger_list.length > 0 ? trip.passenger_list.join(', ') : `${trip.requester_name} e comitiva institucional (${trip.passenger_count} pessoas)`}</span>
+            <td colspan="2" style="padding: 6px 8px;">
+              <span style="color: #64748b; font-weight: 700;">Relação de Passageiros para Conferência no Embarque (${parsedPassengers.length > 0 ? parsedPassengers.length : trip.passenger_count}):</span>
+              ${passengerChecklistHTML}
             </td>
           </tr>
         </table>

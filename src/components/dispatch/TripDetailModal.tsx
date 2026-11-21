@@ -198,6 +198,42 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
     window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
   };
 
+  const parsedPassengers: string[] = (() => {
+    if (trip.passenger_names && trip.passenger_names.trim()) {
+      return trip.passenger_names
+        .split(/\n|;/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (trip.passenger_list && trip.passenger_list.length > 0) {
+      return trip.passenger_list;
+    }
+    return [];
+  })();
+
+  const handleSendDriverWhatsApp = () => {
+    const passengerSection =
+      parsedPassengers.length > 0
+        ? `\n\n*RELAÇÃO DE PASSAGEIROS (${parsedPassengers.length}):*\n${parsedPassengers.join('\n')}`
+        : `\n\n*Passageiros:* ${trip.passenger_count} passageiro(s) (Solicitante: ${trip.requester_name})`;
+
+    const driverMsg = `*ORDEM DE VIAGEM — DIVTRANS / UNILAB*
+- *Processo SEI:* ${trip.process_number}
+- *Solicitante:* ${trip.requester_name} (${trip.macro_unit})${trip.requester_phone ? ` • Tel: ${trip.requester_phone}` : ''}
+- *Veículo:* ${veiculoModelo} • Placa: ${veiculoPlaca}
+- *Saída:* ${departureFormatted}
+- *Local de Embarque:* ${trip.origin_address || getCityName(trip.origin_city_id)}
+- *Destino:* ${trip.destination_address || getCityName(trip.destination_city_id)}
+- *Retorno Previsto:* ${returnFormatted}${trip.notes ? `\n- *Obs.:* ${trip.notes}` : ''}${passengerSection}`;
+
+    const digits = (driver?.phone || '').replace(/\D/g, '');
+    const waNumber = digits.length >= 10 ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
+    const url = waNumber
+      ? `https://wa.me/${waNumber}?text=${encodeURIComponent(driverMsg)}`
+      : `https://wa.me/?text=${encodeURIComponent(driverMsg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
@@ -514,6 +550,31 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
             </div>
           )}
 
+          {/* Seção: Relação de Passageiros (extraída do PDF ou preenchida manualmente) */}
+          {parsedPassengers.length > 0 && (
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-sm text-navy-900">
+                  <Users className="w-4 h-4 text-brand-600" />
+                  <span>Relação de Passageiros ({parsedPassengers.length})</span>
+                </div>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Incluída na Ordem de Tráfego e no envio ao motorista
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-700 pt-1">
+                {parsedPassengers.map((p, idx) => (
+                  <div
+                    key={idx}
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/80 font-medium"
+                  >
+                    {p}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* Modal Footer Actions */}
@@ -526,15 +587,26 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
           </button>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Botões rápidos de notificação (WhatsApp & E-mail) */}
+            {/* Botões rápidos de notificação (WhatsApp Solicitante, Motorista & E-mail) */}
             <button
               onClick={handleSendWhatsApp}
               className="px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
-              title="Abrir WhatsApp com a mensagem oficial pronta"
+              title="Abrir WhatsApp do solicitante com a mensagem oficial pronta"
             >
               <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
               <span>WhatsApp</span>
             </button>
+
+            {(trip.status === 'Confirmado ao Demandante' || Boolean(trip.allocated_driver_id) || Boolean(trip.allocated_vehicle_id)) && (
+              <button
+                onClick={handleSendDriverWhatsApp}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-teal-900 bg-teal-50 border border-teal-200 hover:bg-teal-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                title="Enviar confirmação da viagem + lista completa de passageiros para o motorista via WhatsApp"
+              >
+                <Truck className="w-3.5 h-3.5 text-teal-600" />
+                <span>Enviar p/ Motorista</span>
+              </button>
+            )}
 
             <button
               onClick={handleSendEmail}
