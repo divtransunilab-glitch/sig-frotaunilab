@@ -40,6 +40,7 @@ interface NewTripModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveTrip: (tripData: Partial<TripRequest>) => void;
+  editingTrip?: TripRequest | null;
 }
 
 const MACRO_UNITS: MacroUnit[] = [
@@ -79,6 +80,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   isOpen,
   onClose,
   onSaveTrip,
+  editingTrip = null,
 }) => {
   if (!isOpen) return null;
 
@@ -134,9 +136,46 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [pdfAlertMessage, setPdfAlertMessage] = useState<string | null>(null);
 
-  // Reset completo de todos os campos ao abrir o formulário
+  // Carrega dados para edição ou reseta todos os campos ao abrir o formulário
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    if (editingTrip) {
+      setProcessNumber(editingTrip.process_number || '');
+      setReceivedDate(safeFormatDate(editingTrip.received_at, 'yyyy-MM-dd', format(new Date(), 'yyyy-MM-dd')));
+      setReceivedTime(safeFormatDate(editingTrip.received_at, 'HH:mm', '08:00'));
+      setActivityType(editingTrip.activity_type || '');
+      setRequesterName(editingTrip.requester_name || '');
+      setRequesterEmail(editingTrip.requester_email || '');
+      setRequesterPhone(editingTrip.requester_phone || '');
+      setMacroUnit(editingTrip.macro_unit || '');
+      setRequestingUnit(editingTrip.requesting_unit || '');
+      setOriginCityId(editingTrip.origin_city_id || '');
+      setOriginAddress(editingTrip.origin_address || '');
+      setDestinationCityId(editingTrip.destination_city_id || '');
+      setDestinationAddress(editingTrip.destination_address || '');
+      setIntermediateCities(editingTrip.intermediate_cities || []);
+      setExtraKm(editingTrip.extra_km ?? '');
+      setDepartureDate(safeFormatDate(editingTrip.departure_datetime, 'yyyy-MM-dd', ''));
+      setDepartureTime(safeFormatDate(editingTrip.departure_datetime, 'HH:mm', ''));
+      setReturnDate(safeFormatDate(editingTrip.return_datetime, 'yyyy-MM-dd', ''));
+      setReturnTime(safeFormatDate(editingTrip.return_datetime, 'HH:mm', ''));
+      setPassengerCount(editingTrip.passenger_count ?? 1);
+      setAllocatedContractorId(editingTrip.allocated_contractor_id || '');
+      setAllocatedDriverId(editingTrip.allocated_driver_id || '');
+      const drv = allDrivers.find((d) => d.id === editingTrip.allocated_driver_id);
+      setDriverCategory(drv ? `CNH Cat. ${drv.cnh_category} (${drv.driver_category})` : '');
+      const veh = allVehicles.find((v) => v.id === editingTrip.allocated_vehicle_id);
+      setVehicleType(veh ? veh.type : '');
+      setAllocatedVehicleId(editingTrip.allocated_vehicle_id || '');
+      setStatus(editingTrip.status || 'Pendente de Análise');
+      setTravelReportStatus(editingTrip.travel_report_status || 'Não Aplicável');
+      setPassengerNames(editingTrip.passenger_names || '');
+      setTripObjective(editingTrip.trip_objective || '');
+      setNotes(editingTrip.notes || '');
+      setIsParsingPdf(false);
+      setPdfAlertMessage(null);
+    } else {
       setProcessNumber('');
       setReceivedDate(format(new Date(), 'yyyy-MM-dd'));
       setReceivedTime(format(new Date(), 'HH:mm'));
@@ -170,7 +209,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setIsParsingPdf(false);
       setPdfAlertMessage(null);
     }
-  }, [isOpen]);
+  }, [isOpen, editingTrip]);
 
   // Manipulador de upload e extração de PDF
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -355,6 +394,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     }
 
     onSaveTrip({
+      ...(editingTrip ? { id: editingTrip.id } : {}),
       process_number: processNumber.trim(),
       received_at: receivedAt,
       activity_type: activityType as ActivityType,
@@ -403,7 +443,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 SIG-FROTA • Protocolo Institucional
               </span>
               <h3 className="text-lg sm:text-xl font-extrabold text-white tracking-tight">
-                Cadastro de Solicitação de Transporte Oficial
+                {editingTrip
+                  ? `Editar Solicitação • ${editingTrip.process_number}`
+                  : 'Cadastro de Solicitação de Transporte Oficial'}
               </h3>
             </div>
           </div>
@@ -1121,7 +1163,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
               className="px-6 py-2.5 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-md shadow-brand-600/30 flex items-center gap-2 transition-all active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Cadastrar Solicitação</span>
+              <span>{editingTrip ? 'Salvar Alterações' : 'Cadastrar Solicitação'}</span>
             </button>
           </div>
 

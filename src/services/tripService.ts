@@ -23,8 +23,8 @@ export class TripService {
    * removendo campos extras exclusivos do frontend (ex.: intermediate_cities, extra_km)
    * que fariam o PostgREST rejeitar o upsert.
    */
-  private static toSupabaseRow(trip: TripRequest): Record<string, unknown> {
-    return {
+  private static toSupabaseRow(trip: TripRequest, includeExtendedCols = true): Record<string, unknown> {
+    const base: Record<string, unknown> = {
       id: trip.id,
       process_number: trip.process_number,
       received_at: trip.received_at,
@@ -64,6 +64,13 @@ export class TripService {
       created_at: trip.created_at,
       updated_at: trip.updated_at,
     };
+
+    if (includeExtendedCols) {
+      base.intermediate_cities = trip.intermediate_cities && trip.intermediate_cities.length > 0 ? trip.intermediate_cities : null;
+      base.extra_km = trip.extra_km ?? null;
+    }
+
+    return base;
   }
 
   private static loadTrips(): TripRequest[] {
@@ -285,11 +292,23 @@ export class TripService {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(trips));
 
     // Sincronização automática com Supabase (encadeada para evitar race condition com fetchFromSupabase)
-    const supabasePayload = this.toSupabaseRow(savedTrip);
+    // Tenta gravar com intermediate_cities/extra_km; se as colunas ainda não existirem no banco, faz fallback seguro.
+    const fullPayload = this.toSupabaseRow(savedTrip, true);
+    const basePayload = this.toSupabaseRow(savedTrip, false);
     this.pendingSyncPromise = this.pendingSyncPromise.then(async () => {
       try {
-        const res: any = await supabase.from('trip_requests').upsert(supabasePayload);
-        if (res?.error) console.error('Supabase sync trip_requests error:', res.error.message, res.error);
+        const res: any = await supabase.from('trip_requests').upsert(fullPayload);
+        if (res?.error) {
+          const msg = String(res.error.message || '');
+          if (msg.includes('intermediate_cities') || msg.includes('extra_km') || res.error.code === 'PGRST204') {
+            const fallbackRes: any = await supabase.from('trip_requests').upsert(basePayload);
+            if (fallbackRes?.error) {
+              console.error('Supabase sync trip_requests fallback error:', fallbackRes.error.message);
+            }
+          } else {
+            console.error('Supabase sync trip_requests error:', res.error.message, res.error);
+          }
+        }
       } catch (err: any) {
         console.error('Supabase sync trip_requests exception:', err);
       }

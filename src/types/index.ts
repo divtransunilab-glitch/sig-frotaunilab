@@ -189,6 +189,7 @@ export interface InstitutionalUnit {
 
 export type AuditAction = 
   | 'Criação de Solicitação'
+  | 'Edição de Solicitação'
   | 'Despacho & Escala'
   | 'Alteração de Escala'
   | 'Indeferimento de Demanda'

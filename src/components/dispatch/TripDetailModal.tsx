@@ -25,7 +25,10 @@ import {
   FileCheck2,
   Phone,
   Printer,
-  Trash2
+  Trash2,
+  Pencil,
+  MessageCircle,
+  Mail
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -38,6 +41,7 @@ interface TripDetailModalProps {
   onOpenDispatch: (trip: TripRequest) => void;
   onOpenReject: (trip: TripRequest) => void;
   onOpenChangeDate: (trip: TripRequest) => void;
+  onOpenEdit?: (trip: TripRequest) => void;
   onOpenTrafficOrder?: (trip: TripRequest) => void;
   onOpenDelete?: (trip: TripRequest) => void;
 }
@@ -49,6 +53,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   onOpenDispatch,
   onOpenReject,
   onOpenChangeDate,
+  onOpenEdit,
   onOpenTrafficOrder,
   onOpenDelete,
 }) => {
@@ -140,6 +145,57 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
     navigator.clipboard.writeText(officialDispatchText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  // Monta a mensagem contextualizada conforme o status da solicitação (Aprovada, Indeferida ou Em Análise)
+  const getNotificationMessage = () => {
+    if (trip.status === 'Indeferido') {
+      return `Prezado(a) ${trip.requester_name},
+
+Informamos que sua Solicitação de Veículo Oficial (Processo SEI nº ${trip.process_number}) foi INDEFERIDA.
+- Rota: ${rotaItinerario}
+- Data prevista: ${departureFormatted}
+- Motivo: ${trip.rejection_reason || 'Indisponibilidade operacional'}${trip.rejection_notes ? `\n- Observações: ${trip.rejection_notes}` : ''}
+
+Atenciosamente,
+Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
+    }
+    if (trip.status === 'Confirmado ao Demandante' || Boolean(trip.allocated_vehicle_id)) {
+      return officialDispatchText;
+    }
+    return `Prezado(a) ${trip.requester_name},
+
+Segue o acompanhamento da sua Solicitação de Veículo Oficial:
+- Processo SEI nº: ${trip.process_number}
+- Status atual: ${trip.status}
+- Rota: ${rotaItinerario}
+- Partida: ${departureFormatted} | Retorno: ${returnFormatted}
+
+Atenciosamente,
+Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
+  };
+
+  const handleSendWhatsApp = () => {
+    const msg = getNotificationMessage();
+    const digits = (trip.requester_phone || '').replace(/\D/g, '');
+    const waNumber = digits.length >= 10 ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
+    const url = waNumber
+      ? `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSendEmail = () => {
+    const msg = getNotificationMessage();
+    const statusTag =
+      trip.status === 'Confirmado ao Demandante'
+        ? 'Aprovação / Escalação de Veículo'
+        : trip.status === 'Indeferido'
+        ? 'Indeferimento de Solicitação de Veículo'
+        : 'Acompanhamento de Solicitação de Veículo';
+    const subject = `[DIVTRANS/UNILAB] ${statusTag} - Processo ${trip.process_number}`;
+    const to = trip.requester_email && !trip.requester_email.includes('solicitante@') ? trip.requester_email : '';
+    window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
   };
 
   return (
@@ -470,6 +526,25 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
           </button>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Botões rápidos de notificação (WhatsApp & E-mail) */}
+            <button
+              onClick={handleSendWhatsApp}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              title="Abrir WhatsApp com a mensagem oficial pronta"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>WhatsApp</span>
+            </button>
+
+            <button
+              onClick={handleSendEmail}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              title="Abrir cliente de e-mail com a mensagem oficial pronta"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>E-mail</span>
+            </button>
+
             {(trip.status === 'Confirmado ao Demandante' || Boolean(trip.allocated_vehicle_id)) && (
               <button
                 onClick={() => {
@@ -484,6 +559,20 @@ Informa-se, por meio deste, que sua Solicitação de Veículo Oficial foi aprova
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Ordem de Tráfego (PDF)</span>
+              </button>
+            )}
+
+            {onOpenEdit && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenEdit(trip);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-navy-800 bg-white border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                title="Editar todos os dados desta solicitação"
+              >
+                <Pencil className="w-3.5 h-3.5 text-brand-600" />
+                <span>Editar</span>
               </button>
             )}
 

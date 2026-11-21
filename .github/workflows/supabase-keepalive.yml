@@ -1,0 +1,28 @@
+name: Supabase Keep-Alive (Anti-Pausa)
+
+on:
+  schedule:
+    # Executa a cada 3 dias às 12:00 UTC (09:00 horário de Brasília)
+    - cron: '0 12 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://prlncsoxwpmwcvfgnqbb.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybG5jc294d3Btd2N2ZmducWJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NTIxMjQsImV4cCI6MjEwNDAyODEyNH0.eNQ9coC5PrvUAHq86Xbi4oPD0P43XJNxw5N0A45ayVY' }}
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/trip_requests?select=id&limit=1")
+          echo "Supabase keep-alive HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Supabase ativo e respondendo normalmente."
+          else
+            echo "Falha ao consultar Supabase (HTTP $HTTP_STATUS)."
+            exit 1
+          fi

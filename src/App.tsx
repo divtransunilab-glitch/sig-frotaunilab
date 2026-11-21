@@ -28,6 +28,7 @@ import { AuditView } from './components/audit/AuditView';
 import { ReportsView } from './components/reports/ReportsView';
 import { PublicPortal } from './components/public/PublicPortal';
 import { AuditService } from './services/auditService';
+import { supabase } from './services/supabaseClient';
 
 export function App() {
   // Controle de Autenticação / Separação entre Portal do Solicitante e Sistema de Gestão
@@ -51,6 +52,7 @@ export function App() {
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [isGoogleSheetsModalOpen, setIsGoogleSheetsModalOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
+  const [editingTrip, setEditingTrip] = useState<TripRequest | null>(null);
 
   // Toast / Notification
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'info' } | null>(null);
@@ -88,6 +90,51 @@ export function App() {
   useEffect(() => {
     loadTrips();
   }, []);
+
+  // Atualização em tempo real entre operadores (Supabase Realtime)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const channel = supabase
+      .channel('sigfrota_trip_requests_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trip_requests' },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const incoming = payload.new as TripRequest;
+            if (!incoming || !incoming.id) return;
+            setTrips((prev) => {
+              const existing = prev.find((t) => t.id === incoming.id);
+              const mergedItem: TripRequest = {
+                ...(existing || {}),
+                ...incoming,
+                intermediate_cities: incoming.intermediate_cities ?? existing?.intermediate_cities,
+                extra_km: incoming.extra_km ?? existing?.extra_km,
+              };
+              const updatedList = [mergedItem, ...prev.filter((t) => t.id !== incoming.id)].sort(
+                (a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime()
+              );
+              localStorage.setItem('sigfrota_trips', JSON.stringify(updatedList));
+              return updatedList;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (!deletedId) return;
+            setTrips((prev) => {
+              const updatedList = prev.filter((t) => t.id !== deletedId);
+              localStorage.setItem('sigfrota_trips', JSON.stringify(updatedList));
+              return updatedList;
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated]);
 
   const handleLogin = () => {
     localStorage.setItem('sigfrota_auth', 'true');
@@ -271,7 +318,18 @@ export function App() {
     showToast(`Datas do processo ${trip.process_number} atualizadas.`, 'success');
   };
 
+  const handleOpenNewTripModal = () => {
+    setEditingTrip(null);
+    setIsNewTripModalOpen(true);
+  };
+
+  const handleOpenEditTrip = (trip: TripRequest) => {
+    setEditingTrip(trip);
+    setIsNewTripModalOpen(true);
+  };
+
   const handleSaveNewTrip = (tripData: Partial<TripRequest>) => {
+    const isEditing = Boolean(tripData.id);
     const saved = TripService.saveTrip(tripData);
 
     // 1. Atualiza imediatamente o estado React com a lista local atualizada (sem sobrescrever com fetch defasado)
@@ -282,18 +340,26 @@ export function App() {
       );
     });
 
-    // 2. Log de auditoria de nova solicitação
+    // 2. Log de auditoria de criação ou edição de solicitação
     AuditService.logEvent({
-      action: 'Criação de Solicitação',
+      action: isEditing ? 'Edição de Solicitação' : 'Criação de Solicitação',
       process_number: saved.process_number,
       target_id: saved.id,
       entity_type: 'Viagem',
       compliance_status: saved.status_deadline === 'Dentro do Prazo' ? 'Conforme' : 'Alerta',
-      details: `Nova solicitação aberta por ${saved.requester_name} (${saved.macro_unit}) com destino ${saved.destination_city_id}. Prazo: ${saved.status_deadline} (${saved.advance_days}d).`,
+      details: isEditing
+        ? `Solicitação ${saved.process_number} atualizada (${saved.requester_name} / ${saved.macro_unit}).`
+        : `Nova solicitação aberta por ${saved.requester_name} (${saved.macro_unit}) com destino ${saved.destination_city_id}. Prazo: ${saved.status_deadline} (${saved.advance_days}d).`,
     });
 
     const sheetsNote = GoogleSheetsService.isConfigured() ? ' (backup enviado ao Google Sheets)' : '';
-    showToast(`Processo ${saved.process_number} cadastrado com sucesso!${sheetsNote}`, 'success');
+    showToast(
+      isEditing
+        ? `Processo ${saved.process_number} atualizado com sucesso!${sheetsNote}`
+        : `Processo ${saved.process_number} cadastrado com sucesso!${sheetsNote}`,
+      'success'
+    );
+    setEditingTrip(null);
   };
 
   // Counts for badges
@@ -385,7 +451,7 @@ export function App() {
           {activeTab === 'dashboard' && (
             <DashboardOverview
               trips={trips}
-              onOpenNewTripModal={() => setIsNewTripModalOpen(true)}
+              onOpenNewTripModal={handleOpenNewTripModal}
               onOpenDispatchModal={handleOpenDispatchModal}
               onSelectTripDetail={handleSelectTripDetail}
               onNavigateTab={(tab) => setActiveTab(tab)}
@@ -400,7 +466,7 @@ export function App() {
               vehicles={vehicles}
               drivers={drivers}
               contractors={contractors}
-              onOpenNewTripModal={() => setIsNewTripModalOpen(true)}
+              onOpenNewTripModal={handleOpenNewTripModal}
               onOpenDispatchModal={handleOpenDispatchModal}
               onSelectTripDetail={handleSelectTripDetail}
               onOpenRejectModal={handleOpenRejectModal}
@@ -476,8 +542,12 @@ export function App() {
       {/* Global Modals */}
       <NewTripModal
         isOpen={isNewTripModalOpen}
-        onClose={() => setIsNewTripModalOpen(false)}
+        onClose={() => {
+          setIsNewTripModalOpen(false);
+          setEditingTrip(null);
+        }}
         onSaveTrip={handleSaveNewTrip}
+        editingTrip={editingTrip}
       />
 
       <QuickDispatchModal
@@ -495,6 +565,7 @@ export function App() {
         onOpenDispatch={handleOpenDispatchModal}
         onOpenReject={handleOpenRejectModal}
         onOpenChangeDate={handleOpenChangeDateModal}
+        onOpenEdit={handleOpenEditTrip}
         onOpenTrafficOrder={handleOpenTrafficOrderModal}
         onOpenDelete={handleOpenDeleteModal}
       />
