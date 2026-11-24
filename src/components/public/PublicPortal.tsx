@@ -384,9 +384,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                                 isConfirmed
                                   ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                                   : isRejected
-                                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                                  ? 'bg-slate-900 border-slate-950 text-white'
                                   : isCancelled
-                                  ? 'bg-slate-100 border-slate-300 text-slate-700'
+                                  ? 'bg-rose-50 border-rose-200 text-rose-800'
                                   : isDateChanged
                                   ? 'bg-blue-50 border-blue-200 text-blue-800'
                                   : 'bg-amber-50 border-amber-200 text-amber-900'
@@ -395,7 +395,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                               <div className="flex items-center gap-2 font-bold text-xs">
                                 {isConfirmed ? (
                                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                ) : isRejected || isCancelled ? (
+                                ) : isRejected ? (
+                                  <XCircle className="w-4 h-4 text-slate-300 shrink-0" />
+                                ) : isCancelled ? (
                                   <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
                                 ) : (
                                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />

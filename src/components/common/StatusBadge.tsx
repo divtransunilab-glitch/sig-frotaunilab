@@ -80,8 +80,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, deadline, repo
       );
     case 'Indeferido':
       return (
-        <span className={`inline-flex items-center gap-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 ${sizeClasses[size]}`}>
-          <XCircle className="w-3.5 h-3.5 text-rose-500" />
+        <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white border border-slate-950 ${sizeClasses[size]}`}>
+          <XCircle className="w-3.5 h-3.5 text-slate-300" />
           Indeferido
         </span>
       );
@@ -95,8 +95,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, deadline, repo
     case 'Cancelado pelo Demandante':
     case 'Cancelado pela Unidade Executante':
       return (
-        <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 ${sizeClasses[size]}`}>
-          <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 ${sizeClasses[size]}`}>
+          <span className="w-2 h-2 rounded-full bg-rose-600"></span>
           {status === 'Cancelado pelo Demandante' ? 'Cancelado (Demandante)' : 'Cancelado (Executante)'}
         </span>
       );
