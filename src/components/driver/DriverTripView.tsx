@@ -10,6 +10,8 @@ import {
   buildGoogleMapsUrl,
   buildWazeUrl,
   buildWhatsAppUrl,
+  getDriverTokenFromUrl,
+  getExpectedDriverCodes,
 } from '../../utils/driverLinkUtils';
 import {
   Truck,
@@ -36,6 +38,8 @@ import {
   RefreshCw,
   Plus,
   Trash2,
+  Lock,
+  KeyRound,
 } from 'lucide-react';
 
 interface DriverTripViewProps {
@@ -65,6 +69,18 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
 
   // Passenger boarding checklist (local persistence per trip)
   const [boardedPassengers, setBoardedPassengers] = useState<Record<string, boolean>>({});
+
+  // Autenticação do Motorista (Token da URL + PIN / 4 últimos dígitos da CNH ou Telefone)
+  const urlAccessToken = useMemo(() => getDriverTokenFromUrl(), []);
+  const [driverCodeInput, setDriverCodeInput] = useState<string>('');
+  const [verifiedDriverCode, setVerifiedDriverCode] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem(`sigfrota_driver_code_${tripId}`) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [verifyError, setVerifyError] = useState<string>('');
 
   // Feedback banner
   const [feedback, setFeedback] = useState<{
@@ -159,6 +175,40 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     () => (trip?.allocated_driver_id ? drivers.find((d) => d.id === trip.allocated_driver_id) : undefined),
     [trip, drivers]
   );
+
+  const expectedDriverAuth = useMemo(() => getExpectedDriverCodes(driver), [driver]);
+  const requiresDriverCode = expectedDriverAuth.codes.length > 0;
+  const isDriverVerified =
+    !requiresDriverCode ||
+    (verifiedDriverCode.length >= 4 && expectedDriverAuth.codes.includes(verifiedDriverCode));
+
+  const isTokenInvalid = Boolean(
+    trip?.driver_access_token &&
+      trip.driver_access_token.trim() !== '' &&
+      urlAccessToken !== trip.driver_access_token.trim()
+  );
+
+  const handleVerifyDriverIdentity = (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifyError('');
+    const clean = driverCodeInput.replace(/\D/g, '');
+    if (clean.length < 4) {
+      setVerifyError('Digite os 4 dígitos de identificação.');
+      return;
+    }
+    if (expectedDriverAuth.codes.length > 0 && !expectedDriverAuth.codes.includes(clean)) {
+      setVerifyError(
+        `Código incorreto para o motorista escalado (${driver?.name || ''}). Informe seu ${expectedDriverAuth.hint}.`
+      );
+      return;
+    }
+    setVerifiedDriverCode(clean);
+    try {
+      sessionStorage.setItem(`sigfrota_driver_code_${tripId}`, clean);
+    } catch {
+      // ignore
+    }
+  };
 
   const parsedPassengers: string[] = useMemo(() => {
     if (!trip) return [];
@@ -296,6 +346,9 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       checkin_at: nowIso,
       notes: reportNotes.trim() || undefined,
       trip_legs: initialLegs,
+      access_token: urlAccessToken || undefined,
+      driver_code: verifiedDriverCode || undefined,
+      verified_name: driver?.name,
     });
     setIsSubmitting(false);
 
@@ -380,6 +433,9 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       fuel_liters: fuelLiters ? parseFloat(fuelLiters) : undefined,
       toll_amount: tollAmount ? parseFloat(tollAmount) : undefined,
       report_notes: reportNotes.trim() || undefined,
+      access_token: urlAccessToken || undefined,
+      driver_code: verifiedDriverCode || undefined,
+      verified_name: driver?.name,
     });
     setIsSubmitting(false);
 
@@ -425,6 +481,33 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
           <p className="text-xs text-slate-600 leading-relaxed">
             O link pode estar incompleto ou a viagem foi removida/reagendada pela DIVTRANS.
             Solicite um novo link atualizado ao setor de transportes.
+          </p>
+          {onExitDriverMode && (
+            <button
+              onClick={onExitDriverMode}
+              className="w-full py-3 px-4 rounded-xl bg-navy-950 text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-navy-900"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Ir para o Portal SIG-FROTA</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (isTokenInvalid) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white rounded-3xl shadow-xl border border-rose-200 p-8 max-w-md w-full space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h1 className="text-lg font-extrabold text-navy-950">Link Revogado ou Inválido</h1>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            A chave de segurança desta Ordem de Tráfego não confere ou foi revogada (por exemplo,
+            após alteração do motorista escalado). Solicite o link atualizado à{' '}
+            <strong>DIVTRANS / UNILAB</strong>.
           </p>
           {onExitDriverMode && (
             <button
@@ -841,6 +924,52 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                 </div>
               )}
             </div>
+          ) : !isDriverVerified ? (
+            /* VERIFICAÇÃO DE IDENTIDADE DO MOTORISTA ESCALADO (OPÇÃO 1: PIN / 4 ÚLTIMOS DÍGITOS CNH OU TELEFONE) */
+            <form onSubmit={handleVerifyDriverIdentity} className="space-y-3 bg-navy-950/5 border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 rounded-xl bg-navy-950 text-emerald-400 shrink-0">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-extrabold text-navy-950">
+                    Confirme sua identidade para lançar o KM
+                  </h3>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                    Motorista escalado: <strong className="text-navy-950">{driver?.name}</strong>.
+                    Digite seu <strong>{expectedDriverAuth.hint}</strong> para liberar o Check-in e o Check-out.
+                  </p>
+                </div>
+              </div>
+
+              {verifyError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
+                  {verifyError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                  value={driverCodeInput}
+                  onChange={(e) => {
+                    setDriverCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6));
+                    setVerifyError('');
+                  }}
+                  placeholder="4 dígitos"
+                  className="flex-1 px-4 py-3 text-center text-lg font-mono font-extrabold tracking-widest rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-3 rounded-xl bg-navy-950 hover:bg-navy-900 text-white text-xs font-extrabold shadow-md transition-colors"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </form>
           ) : !isCheckedIn ? (
             /* ETAPA 1: CHECK-IN DE SAÍDA */
             <form onSubmit={handleCheckIn} className="space-y-3">

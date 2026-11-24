@@ -37,7 +37,7 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [copiedDriverLink, setCopiedDriverLink] = useState(false);
 
-  const driverOrderUrl = trip ? buildDriverOrderUrl(trip.id) : '';
+  const driverOrderUrl = trip ? buildDriverOrderUrl(trip.id, trip.driver_access_token) : '';
 
   useEffect(() => {
     let active = true;

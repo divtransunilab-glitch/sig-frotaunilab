@@ -112,6 +112,7 @@ export interface Driver {
   cnh_category: string;
   cnh_number?: string;
   phone?: string;
+  access_pin?: string; // PIN de 4 dígitos para verificação no link mobile
   is_active: boolean;
 }
 
@@ -165,6 +166,11 @@ export interface TripRequest {
   report_notes?: string;
   report_submitted_at?: string;
   report_approved_at?: string;
+  report_approved_by_name?: string; // Nome do gestor que homologou o KM
+  report_approved_by_role?: string; // Cargo do gestor que homologou o KM
+  driver_access_token?: string; // Token único por viagem (revogado se trocar motorista)
+  driver_verified_name?: string; // Nome do motorista autenticado via PIN/CNH
+  driver_verified_at?: string; // Data/hora da verificação do motorista
   driver_checkin_at?: string; // Horário real de saída registrado pelo motorista no celular
   driver_checkout_at?: string; // Horário real de retorno registrado pelo motorista no celular
   odometer_start?: number; // Hodômetro na saída

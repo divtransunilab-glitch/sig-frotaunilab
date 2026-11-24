@@ -1,16 +1,43 @@
-import { City, TripLeg, TripRequest } from '../types';
+import { City, Driver, TripLeg, TripRequest } from '../types';
 
 export const DRIVER_QUERY_PARAM = 'motorista';
+export const DRIVER_TOKEN_PARAM = 'chave';
 
 /**
- * Gera a URL pública mobile da Ordem de Tráfego Digital para o motorista.
+ * Gera um token secreto aleatório de 16 caracteres para o link único da viagem.
  */
-export function buildDriverOrderUrl(tripId: string): string {
-  if (typeof window === 'undefined') return `?${DRIVER_QUERY_PARAM}=${encodeURIComponent(tripId)}`;
+export function generateDriverAccessToken(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < arr.length; i++) {
+      result += chars[arr[i] % chars.length];
+    }
+    return result;
+  }
+  for (let i = 0; i < 16; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+/**
+ * Gera a URL pública mobile da Ordem de Tráfego Digital para o motorista (com token único).
+ */
+export function buildDriverOrderUrl(tripId: string, accessToken?: string): string {
+  if (typeof window === 'undefined') {
+    const tokenPart = accessToken ? `&${DRIVER_TOKEN_PARAM}=${encodeURIComponent(accessToken)}` : '';
+    return `?${DRIVER_QUERY_PARAM}=${encodeURIComponent(tripId)}${tokenPart}`;
+  }
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
   url.searchParams.set(DRIVER_QUERY_PARAM, tripId);
+  if (accessToken && accessToken.trim()) {
+    url.searchParams.set(DRIVER_TOKEN_PARAM, accessToken.trim());
+  }
   return url.toString();
 }
 
@@ -22,6 +49,51 @@ export function getDriverTripIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   const id = params.get(DRIVER_QUERY_PARAM);
   return id && id.trim() ? id.trim() : null;
+}
+
+/**
+ * Lê o token único da viagem (?chave=<token>), se presente.
+ */
+export function getDriverTokenFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get(DRIVER_TOKEN_PARAM);
+  return token && token.trim() ? token.trim() : null;
+}
+
+/**
+ * Retorna os códigos válidos de 4 dígitos para o motorista escalado (PIN, 4 últimos da CNH ou 4 últimos do telefone).
+ */
+export function getExpectedDriverCodes(driver?: Driver): {
+  codes: string[];
+  hint: string;
+} {
+  if (!driver) return { codes: [], hint: '4 dígitos de identificação' };
+  const codes: string[] = [];
+  const hints: string[] = [];
+
+  const pin = (driver.access_pin || '').replace(/\D/g, '');
+  if (pin.length >= 4) {
+    codes.push(pin);
+    hints.push('PIN');
+  }
+
+  const cnhDigits = (driver.cnh_number || '').replace(/\D/g, '');
+  if (cnhDigits.length >= 4) {
+    codes.push(cnhDigits.slice(-4));
+    hints.push('4 últimos dígitos da CNH');
+  }
+
+  const phoneDigits = (driver.phone || '').replace(/\D/g, '');
+  if (phoneDigits.length >= 4) {
+    codes.push(phoneDigits.slice(-4));
+    hints.push('4 últimos dígitos do telefone');
+  }
+
+  return {
+    codes: Array.from(new Set(codes)),
+    hint: hints.length > 0 ? hints.join(' ou ') : '4 últimos dígitos do telefone/CNH',
+  };
 }
 
 /**

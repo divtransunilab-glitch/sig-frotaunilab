@@ -14,6 +14,7 @@ import { differenceInDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import { supabase } from './supabaseClient';
 import { GoogleSheetsService } from './googleSheetsService';
 import { toTitleCasePtBr } from '../utils/textUtils';
+import { generateDriverAccessToken } from '../utils/driverLinkUtils';
 
 const STORAGE_KEY_TRIPS = 'sigfrota_trips';
 
@@ -75,6 +76,11 @@ export class TripService {
       base.odometer_start = trip.odometer_start ?? null;
       base.odometer_end = trip.odometer_end ?? null;
       base.trip_legs = trip.trip_legs && trip.trip_legs.length > 0 ? trip.trip_legs : null;
+      base.driver_access_token = trip.driver_access_token || null;
+      base.driver_verified_name = trip.driver_verified_name || null;
+      base.driver_verified_at = trip.driver_verified_at || null;
+      base.report_approved_by_name = trip.report_approved_by_name || null;
+      base.report_approved_by_role = trip.report_approved_by_role || null;
     }
 
     return base;
@@ -257,9 +263,24 @@ export class TripService {
       const destination = tripData.destination_city_id || existingTrip.destination_city_id || 'city-3';
       const estimatedKm = tripData.estimated_km ?? existingTrip.estimated_km ?? DistanceService.calculateTotalKm(origin, destination);
 
+      // Gera ou rotaciona o token único do motorista sempre que o motorista escalado for atribuído ou alterado
+      const nextDriverId =
+        tripData.allocated_driver_id !== undefined
+          ? tripData.allocated_driver_id
+          : existingTrip.allocated_driver_id;
+      const driverChanged =
+        tripData.allocated_driver_id !== undefined &&
+        tripData.allocated_driver_id !== existingTrip.allocated_driver_id;
+      const nextDriverToken = nextDriverId
+        ? driverChanged || !existingTrip.driver_access_token
+          ? generateDriverAccessToken()
+          : existingTrip.driver_access_token
+        : undefined;
+
       savedTrip = {
         ...existingTrip,
         ...tripData,
+        driver_access_token: tripData.driver_access_token ?? nextDriverToken,
         received_at: receivedAt,
         departure_datetime: departure,
         advance_days: advanceDays,
@@ -310,6 +331,9 @@ export class TripService {
         allocated_contractor_id: tripData.allocated_contractor_id,
         allocated_driver_id: tripData.allocated_driver_id,
         allocated_vehicle_id: tripData.allocated_vehicle_id,
+        driver_access_token:
+          tripData.driver_access_token ||
+          (tripData.allocated_driver_id ? generateDriverAccessToken() : undefined),
         travel_report_status: tripData.travel_report_status,
         notes: tripData.notes || '',
         created_at: now,
@@ -339,6 +363,9 @@ export class TripService {
             msg.includes('driver_checkin_at') ||
             msg.includes('odometer_start') ||
             msg.includes('trip_legs') ||
+            msg.includes('driver_access_token') ||
+            msg.includes('driver_verified_name') ||
+            msg.includes('report_approved_by_name') ||
             res.error.code === 'PGRST204'
           ) {
             res = await supabase.from('trip_requests').upsert(basePayload);
@@ -583,13 +610,18 @@ export class TripService {
   }
 
   /**
-   * Aprovação do relatório de viagem pelo Gerente
+   * Aprovação / Homologação do relatório de viagem pelo Gerente (registrando Nome e Cargo)
    */
-  static approveTravelReport(tripId: string): TripRequest {
+  static approveTravelReport(
+    tripId: string,
+    approver?: { name?: string; role?: string }
+  ): TripRequest {
     return this.saveTrip({
       id: tripId,
       travel_report_status: 'Finalizado no Sistema',
       report_approved_at: new Date().toISOString(),
+      ...(approver?.name ? { report_approved_by_name: approver.name.trim() } : {}),
+      ...(approver?.role ? { report_approved_by_role: approver.role.trim() } : {}),
     });
   }
 
@@ -649,6 +681,9 @@ export class TripService {
       checkin_at?: string;
       notes?: string;
       trip_legs?: TripLeg[];
+      access_token?: string;
+      driver_code?: string;
+      verified_name?: string;
     }
   ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
     const timestamp = data.checkin_at || new Date().toISOString();
@@ -661,10 +696,17 @@ export class TripService {
         p_report_notes: data.notes || null,
         p_event_timestamp: timestamp,
         p_trip_legs: data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : null,
+        p_access_token: data.access_token || null,
+        p_driver_code: data.driver_code || null,
       });
 
-      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC (sem p_trip_legs)
-      if (rpcRes.error && String(rpcRes.error.message || '').includes('p_trip_legs')) {
+      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC
+      if (
+        rpcRes.error &&
+        (String(rpcRes.error.message || '').includes('p_access_token') ||
+          String(rpcRes.error.message || '').includes('p_driver_code') ||
+          String(rpcRes.error.message || '').includes('p_trip_legs'))
+      ) {
         rpcRes = await supabase.rpc('driver_update_trip_execution', {
           p_trip_id: tripId,
           p_action: 'checkin',
@@ -680,6 +722,10 @@ export class TripService {
           trip_legs:
             (rpcRes.data as TripRequest).trip_legs ||
             (data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : undefined),
+          driver_verified_name:
+            (rpcRes.data as TripRequest).driver_verified_name || data.verified_name,
+          driver_verified_at:
+            (rpcRes.data as TripRequest).driver_verified_at || timestamp,
         };
         const local = this.loadTrips();
         const idx = local.findIndex((t) => t.id === updated.id);
@@ -690,7 +736,15 @@ export class TripService {
       }
 
       if (rpcRes.error) {
-        console.warn('RPC driver_update_trip_execution indisponível ou recusada:', rpcRes.error.message);
+        const errMsg = String(rpcRes.error.message || '');
+        if (
+          errMsg.includes('Link revogado') ||
+          errMsg.includes('Código de identificação inválido') ||
+          errMsg.includes('já foi homologada')
+        ) {
+          return { trip: null, syncedToCloud: false, warning: errMsg };
+        }
+        console.warn('RPC driver_update_trip_execution indisponível ou recusada:', errMsg);
       }
     } catch (err) {
       console.warn('Erro ao chamar RPC de check-in do motorista:', err);
@@ -711,6 +765,8 @@ export class TripService {
       driver_checkin_at: timestamp,
       odometer_start: data.odometer_start,
       trip_legs: data.trip_legs,
+      driver_verified_name: data.verified_name || existing.driver_verified_name,
+      driver_verified_at: existing.driver_verified_at || timestamp,
       report_notes: data.notes ? data.notes : existing.report_notes,
     });
 
@@ -736,6 +792,9 @@ export class TripService {
       toll_amount?: number;
       report_notes?: string;
       trip_legs?: TripLeg[];
+      access_token?: string;
+      driver_code?: string;
+      verified_name?: string;
     }
   ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
     const timestamp = data.checkout_at || new Date().toISOString();
@@ -752,10 +811,17 @@ export class TripService {
         p_report_notes: data.report_notes || null,
         p_event_timestamp: timestamp,
         p_trip_legs: data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : null,
+        p_access_token: data.access_token || null,
+        p_driver_code: data.driver_code || null,
       });
 
-      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC (sem p_trip_legs)
-      if (rpcRes.error && String(rpcRes.error.message || '').includes('p_trip_legs')) {
+      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC
+      if (
+        rpcRes.error &&
+        (String(rpcRes.error.message || '').includes('p_access_token') ||
+          String(rpcRes.error.message || '').includes('p_driver_code') ||
+          String(rpcRes.error.message || '').includes('p_trip_legs'))
+      ) {
         rpcRes = await supabase.rpc('driver_update_trip_execution', {
           p_trip_id: tripId,
           p_action: 'checkout',
@@ -775,6 +841,10 @@ export class TripService {
           trip_legs:
             (rpcRes.data as TripRequest).trip_legs ||
             (data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : undefined),
+          driver_verified_name:
+            (rpcRes.data as TripRequest).driver_verified_name || data.verified_name,
+          driver_verified_at:
+            (rpcRes.data as TripRequest).driver_verified_at || timestamp,
         };
         const local = this.loadTrips();
         const idx = local.findIndex((t) => t.id === updated.id);
@@ -786,7 +856,15 @@ export class TripService {
       }
 
       if (rpcRes.error) {
-        console.warn('RPC driver_update_trip_execution (checkout) falhou:', rpcRes.error.message);
+        const errMsg = String(rpcRes.error.message || '');
+        if (
+          errMsg.includes('Link revogado') ||
+          errMsg.includes('Código de identificação inválido') ||
+          errMsg.includes('já foi homologada')
+        ) {
+          return { trip: null, syncedToCloud: false, warning: errMsg };
+        }
+        console.warn('RPC driver_update_trip_execution (checkout) falhou:', errMsg);
       }
     } catch (err) {
       console.warn('Erro ao chamar RPC de check-out do motorista:', err);
@@ -809,6 +887,8 @@ export class TripService {
       odometer_start: data.odometer_start ?? existing.odometer_start,
       odometer_end: data.odometer_end,
       trip_legs: data.trip_legs,
+      driver_verified_name: data.verified_name || existing.driver_verified_name,
+      driver_verified_at: existing.driver_verified_at || timestamp,
       real_km: data.real_km,
       fuel_liters: data.fuel_liters,
       toll_amount: data.toll_amount,

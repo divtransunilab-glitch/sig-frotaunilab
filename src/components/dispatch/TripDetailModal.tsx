@@ -204,7 +204,7 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
 
   const parsedPassengers: string[] = parsePassengerList(trip.passenger_names, trip.passenger_list);
 
-  const driverOrderUrl = buildDriverOrderUrl(trip.id);
+  const driverOrderUrl = buildDriverOrderUrl(trip.id, trip.driver_access_token);
 
   const handleCopyDriverLink = async () => {
     try {

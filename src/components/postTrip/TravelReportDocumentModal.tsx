@@ -278,16 +278,46 @@ export const TravelReportDocumentModal: React.FC<TravelReportDocumentModalProps>
       </div>
 
       <!-- 6. Homologação / Assinaturas -->
-      <div style="border-top: 1px solid #cbd5e1; padding-top: 12px;">
+      <div style="border-top: 1px solid #cbd5e1; padding-top: 10px;">
+        ${
+          isFinalized
+            ? `<div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; font-size: 10px; color: #065f46;">
+                <strong>HOMOLOGAÇÃO OFICIAL DA APURAÇÃO DE KM:</strong>
+                Aprovado por <strong>${escapeHtml(trip.report_approved_by_name || 'Gestor da DIVTRANS')}</strong>${
+                  trip.report_approved_by_role ? ` — <strong>${escapeHtml(trip.report_approved_by_role)}</strong>` : ''
+                }, em <strong>${approvedAt}</strong>.
+              </div>`
+            : ''
+        }
+        ${
+          trip.driver_verified_name
+            ? `<div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; margin-bottom: 12px; font-size: 9.5px; color: #334155;">
+                <strong>Autenticação do Condutor no Diário de Bordo Digital:</strong>
+                Lançamento confirmado por <strong>${escapeHtml(trip.driver_verified_name)}</strong> via validação de Token + PIN/CNH${
+                  trip.driver_verified_at
+                    ? ` em ${safeFormatDate(trip.driver_verified_at, "dd/MM/yyyy 'às' HH:mm", '')}`
+                    : ''
+                }.
+              </div>`
+            : ''
+        }
         <table style="width: 100%; border-collapse: collapse; text-align: center;">
           <tr>
             <td style="width: 50%; padding: 0 14px; vertical-align: top;">
               <div style="border-top: 1px solid #0f172a; padding-top: 4px; font-weight: 700; font-size: 10px; color: #0f172a;">Motorista / Contratada</div>
-              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${escapeHtml(driver ? driver.name : 'Responsável pela Execução')}</div>
+              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${escapeHtml(trip.driver_verified_name || (driver ? driver.name : 'Responsável pela Execução'))}</div>
             </td>
             <td style="width: 50%; padding: 0 14px; vertical-align: top;">
-              <div style="border-top: 1px solid #0f172a; padding-top: 4px; font-weight: 700; font-size: 10px; color: #0f172a;">Homologação — DIVTRANS / PROADI</div>
-              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${isFinalized ? `Homologado no SIG-FROTA em ${approvedAt}` : 'Aguardando homologação do gestor'}</div>
+              <div style="border-top: 1px solid #0f172a; padding-top: 4px; font-weight: 700; font-size: 10px; color: #0f172a;">${
+                isFinalized && trip.report_approved_by_name
+                  ? escapeHtml(trip.report_approved_by_name)
+                  : 'Homologação — DIVTRANS / PROADI'
+              }</div>
+              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${
+                isFinalized
+                  ? `${escapeHtml(trip.report_approved_by_role || 'Divisão de Transportes — DIVTRANS')} • Homologado em ${approvedAt}`
+                  : 'Aguardando homologação do gestor'
+              }</div>
             </td>
           </tr>
         </table>

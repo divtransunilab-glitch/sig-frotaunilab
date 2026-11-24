@@ -60,6 +60,8 @@ export const FleetManagement: React.FC = () => {
   const [dContractorId, setDContractorId] = useState<string>('');
   const [dCategory, setDCategory] = useState<DriverCategory>('Motoristas de 01-09');
   const [dCnh, setDCnh] = useState('B');
+  const [dCnhNumber, setDCnhNumber] = useState('');
+  const [dAccessPin, setDAccessPin] = useState('');
   const [dPhone, setDPhone] = useState('');
 
   // Contractor Modal
@@ -141,6 +143,8 @@ export const FleetManagement: React.FC = () => {
       setDContractorId(driver.contractor_id);
       setDCategory(driver.driver_category);
       setDCnh(driver.cnh_category);
+      setDCnhNumber(driver.cnh_number || '');
+      setDAccessPin(driver.access_pin || '');
       setDPhone(driver.phone || '');
     } else {
       setEditingDriver(null);
@@ -148,6 +152,8 @@ export const FleetManagement: React.FC = () => {
       setDContractorId(contractors[0]?.id || '');
       setDCategory('Motoristas de 01-09');
       setDCnh('B');
+      setDCnhNumber('');
+      setDAccessPin('');
       setDPhone('');
     }
     setIsDriverModalOpen(true);
@@ -161,6 +167,8 @@ export const FleetManagement: React.FC = () => {
       contractor_id: dContractorId,
       driver_category: dCategory,
       cnh_category: dCnh,
+      cnh_number: dCnhNumber.trim() || undefined,
+      access_pin: dAccessPin.replace(/\D/g, '').slice(0, 6) || undefined,
       phone: dPhone,
       is_active: true,
     });
@@ -864,6 +872,34 @@ export const FleetManagement: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nº da CNH (opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 01234567890"
+                    value={dCnhNumber}
+                    onChange={(e) => setDCnhNumber(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">PIN Mobile (4 dígitos)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="Ex: 4821"
+                    value={dAccessPin}
+                    onChange={(e) => setDAccessPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 font-mono font-bold focus:border-brand-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 -mt-2">
+                No link mobile, o motorista valida a identidade com o PIN ou os 4 últimos dígitos da CNH/telefone.
+              </p>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Telefone / WhatsApp</label>

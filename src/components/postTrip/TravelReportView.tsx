@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { TripRequest, TripLeg } from '../../types';
 import { TripService } from '../../services/tripService';
+import { AuditService } from '../../services/auditService';
 import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
 import { StatusBadge } from '../common/StatusBadge';
@@ -51,6 +52,9 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [reportDocTrip, setReportDocTrip] = useState<TripRequest | null>(null);
+  const [approvingTrip, setApprovingTrip] = useState<TripRequest | null>(null);
+  const [approverName, setApproverName] = useState<string>('');
+  const [approverRole, setApproverRole] = useState<string>('');
   const [copiedTripId, setCopiedTripId] = useState<string | null>(null);
 
   // Filter State
@@ -73,12 +77,12 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
   const vehicles = FleetService.getVehicles();
   const drivers = FleetService.getDrivers();
 
-  const handleCopyDriverLink = async (tripId: string) => {
-    const url = buildDriverOrderUrl(tripId);
+  const handleCopyDriverLink = async (trip: TripRequest) => {
+    const url = buildDriverOrderUrl(trip.id, trip.driver_access_token);
     try {
       await navigator.clipboard.writeText(url);
-      setCopiedTripId(tripId);
-      setTimeout(() => setCopiedTripId((prev) => (prev === tripId ? null : prev)), 2500);
+      setCopiedTripId(trip.id);
+      setTimeout(() => setCopiedTripId((prev) => (prev === trip.id ? null : prev)), 2500);
     } catch {
       window.prompt('Copie o link mobile do motorista:', url);
     }
@@ -307,8 +311,53 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
     onTripUpdated();
   };
 
-  const handleApproveReport = (tripId: string) => {
-    TripService.approveTravelReport(tripId);
+  const handleOpenApproveModal = (trip: TripRequest) => {
+    let defaultName = '';
+    try {
+      const savedUser = localStorage.getItem('sigfrota_user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        defaultName = parsed.name || '';
+      }
+    } catch {
+      // ignore
+    }
+    const savedRole =
+      localStorage.getItem('sigfrota_approver_role') || 'Chefe da Divisão de Transportes — DIVTRANS';
+
+    setApproverName(defaultName);
+    setApproverRole(savedRole);
+    setApprovingTrip(trip);
+  };
+
+  const handleConfirmApproveReport = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!approvingTrip) return;
+
+    const cleanName = approverName.trim() || 'Gestor de Frotas';
+    const cleanRole = approverRole.trim() || 'Divisão de Transportes — DIVTRANS';
+
+    try {
+      localStorage.setItem('sigfrota_approver_role', cleanRole);
+    } catch {
+      // ignore
+    }
+
+    TripService.approveTravelReport(approvingTrip.id, {
+      name: cleanName,
+      role: cleanRole,
+    });
+
+    AuditService.logEvent({
+      action: 'Aprovação de Relatório',
+      process_number: approvingTrip.process_number,
+      target_id: approvingTrip.id,
+      entity_type: 'Viagem',
+      compliance_status: 'Conforme',
+      details: `Relatório de viagem (${approvingTrip.real_km ?? approvingTrip.estimated_km} km) homologado por ${cleanName} (${cleanRole}).`,
+    });
+
+    setApprovingTrip(null);
     onTripUpdated();
   };
 
@@ -787,7 +836,7 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                           {/* Copiar link mobile do motorista */}
                           {!isFinalized && (
                             <button
-                              onClick={() => handleCopyDriverLink(trip.id)}
+                              onClick={() => handleCopyDriverLink(trip)}
                               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 transition-colors flex items-center gap-1"
                               title="Copiar link mobile para o motorista fazer check-in/out"
                             >
@@ -833,7 +882,7 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                           {/* Botão de Homologação do Gerente */}
                           {isAwaitingManager && (
                             <button
-                              onClick={() => handleApproveReport(trip.id)}
+                              onClick={() => handleOpenApproveModal(trip)}
                               className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-xs transition-all flex items-center gap-1 active:scale-95"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1135,6 +1184,87 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                       ? 'Salvar Alterações de KM'
                       : 'Salvar & Enviar para Parecer'}
                   </span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Homologação com Nome e Cargo do Gestor */}
+      {approvingTrip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-md overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                  Homologação Oficial
+                </span>
+                <h3 className="font-bold text-base text-navy-950">
+                  Aprovar Apuração de KM: {approvingTrip.process_number}
+                </h3>
+              </div>
+              <button
+                onClick={() => setApprovingTrip(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmApproveReport} className="space-y-4 text-xs">
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 text-emerald-950 space-y-1">
+                <div>
+                  KM Real Apurado: <strong>{approvingTrip.real_km ?? approvingTrip.estimated_km} km</strong>{' '}
+                  (Previsto: {approvingTrip.estimated_km} km)
+                </div>
+                <div className="text-[11px] text-emerald-800">
+                  Estes dados ficarão registrados permanentemente no Relatório Consolidado de Viagem (PDF).
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Nome Completo do Gestor Aprovador *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={approverName}
+                  onChange={(e) => setApproverName(e.target.value)}
+                  placeholder="Ex: Elano Arruda"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-semibold focus:border-brand-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Cargo / Função *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={approverRole}
+                  onChange={(e) => setApproverRole(e.target.value)}
+                  placeholder="Ex: Chefe da Divisão de Transportes — DIVTRANS"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-semibold focus:border-brand-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApprovingTrip(null)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 font-bold shadow-md flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirmar Homologação</span>
                 </button>
               </div>
             </form>
