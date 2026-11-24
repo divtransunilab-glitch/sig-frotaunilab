@@ -26,9 +26,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
-  // Seções selecionáveis do Relatório Executivo em PDF
+  // Seções selecionáveis do Relatório Executivo em PDF (A4 Retrato)
   const [includeExecutiveSummary, setIncludeExecutiveSummary] = useState(true);
   const [includeHeatmapAndRankings, setIncludeHeatmapAndRankings] = useState(true);
+  const [includeSectorAnalysis, setIncludeSectorAnalysis] = useState(true);
   const [includeFinancialAndQuota, setIncludeFinancialAndQuota] = useState(true);
   const [includeProcessTable, setIncludeProcessTable] = useState(true);
 
@@ -103,6 +104,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
   const hasAnySection =
     includeExecutiveSummary ||
     includeHeatmapAndRankings ||
+    includeSectorAnalysis ||
     includeFinancialAndQuota ||
     includeProcessTable;
 
@@ -112,6 +114,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
       periodLabel: monthLabel,
       includeExecutiveSummary,
       includeHeatmapAndRankings,
+      includeSectorAnalysis,
       includeFinancialAndQuota,
       includeProcessTable,
     });
@@ -228,10 +231,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
               </span>
             </div>
             <h3 className="text-lg font-bold text-white">
-              Gerar Relatório Executivo em PDF
+              Gerar Relatório Executivo em PDF (A4)
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Documento gerencial multi-páginas com KPIs, análise inteligente automática, heatmap, gráficos, custos e franquia.
+              Documento oficial A4 retrato com KPIs, análise inteligente, heatmap, análise por setor, custos e franquia.
             </p>
 
             {/* Seletor de Seções */}
@@ -253,6 +256,15 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
                   className="rounded accent-blue-500"
                 />
                 <span>Heatmap Operacional & Rankings</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeSectorAnalysis}
+                  onChange={(e) => setIncludeSectorAnalysis(e.target.checked)}
+                  className="rounded accent-blue-500"
+                />
+                <span>Análise Detalhada por Setor & Solicitantes</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input

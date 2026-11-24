@@ -12,6 +12,7 @@ export interface ExecutiveReportOptions {
   title?: string;
   includeExecutiveSummary: boolean;
   includeHeatmapAndRankings: boolean;
+  includeSectorAnalysis?: boolean;
   includeFinancialAndQuota: boolean;
   includeProcessTable: boolean;
 }
@@ -28,9 +29,12 @@ function loadQuotaSettings(): {
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
-        defaultVehicleMonthlyKm: Number(parsed.defaultVehicleMonthlyKm) > 0 ? Number(parsed.defaultVehicleMonthlyKm) : 3000,
-        alertThresholdPercent: Number(parsed.alertThresholdPercent) > 0 ? Number(parsed.alertThresholdPercent) : 75,
-        vehicleQuotas: parsed.vehicleQuotas && typeof parsed.vehicleQuotas === 'object' ? parsed.vehicleQuotas : {},
+        defaultVehicleMonthlyKm:
+          Number(parsed.defaultVehicleMonthlyKm) > 0 ? Number(parsed.defaultVehicleMonthlyKm) : 3000,
+        alertThresholdPercent:
+          Number(parsed.alertThresholdPercent) > 0 ? Number(parsed.alertThresholdPercent) : 75,
+        vehicleQuotas:
+          parsed.vehicleQuotas && typeof parsed.vehicleQuotas === 'object' ? parsed.vehicleQuotas : {},
       };
     }
   } catch {
@@ -45,11 +49,12 @@ function formatBRL(val: number): string {
 
 export class ExecutiveReportService {
   static generateExecutivePDF(trips: TripRequest[], options: ExecutiveReportOptions): void {
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const pageW = 297;
-    const pageH = 210;
-    const marginX = 14;
-    const contentW = pageW - marginX * 2; // 269mm
+    // Formato A4 Retrato Oficial (210 x 297 mm) — padrão SEI / PROADI / Reitoria
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = 210;
+    const pageH = 297;
+    const marginX = 12;
+    const contentW = pageW - marginX * 2; // 186mm
 
     const cities = DistanceService.getCities();
     const vehicles = FleetService.getVehicles();
@@ -57,36 +62,42 @@ export class ExecutiveReportService {
     const contractors = FleetService.getContractors();
     const quotaSettings = loadQuotaSettings();
 
+    const includeSectors = options.includeSectorAnalysis !== false;
+
     const getCityName = (id: string) => {
       const c = cities.find((item) => item.id === id);
       return c ? c.name : id;
     };
 
     const drawPageHeader = (sectionTitle: string) => {
-      // Faixa superior Navy + detalhe Esmeralda
       doc.setFillColor(15, 23, 42);
-      doc.rect(0, 0, pageW, 17, 'F');
+      doc.rect(0, 0, pageW, 20, 'F');
       doc.setFillColor(5, 150, 105);
-      doc.rect(0, 17, pageW, 1.5, 'F');
+      doc.rect(0, 20, pageW, 1.5, 'F');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
+      doc.setFontSize(10.5);
       doc.setTextColor(255, 255, 255);
-      doc.text('SIG-FROTA UNILAB  |  RELATÓRIO EXECUTIVO DE GESTÃO DE FROTAS (PROADI / DIVTRANS)', marginX, 10.5);
+      doc.text('UNIVERSIDADE DA INTEGRAÇÃO INTERNACIONAL DA LUSOFONIA AFRO-BRASILEIRA', marginX, 8);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(167, 243, 208);
-      doc.text(`Período: ${options.periodLabel}`, pageW - marginX, 10.5, { align: 'right' });
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225);
+      doc.text('PRÓ-REITORIA DE ADMINISTRAÇÃO E PLANEJAMENTO (PROADI) • DIVISÃO DE TRANSPORTES (DIVTRANS)', marginX, 13.5);
 
-      // Subtítulo da Seção
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(167, 243, 208);
+      doc.text(`SIG-FROTA  |  Período: ${options.periodLabel}`, marginX, 18);
+
+      // Subtítulo da seção
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(sectionTitle, marginX, 25);
+      doc.text(sectionTitle, marginX, 28.5);
 
-      doc.setDrawColor(226, 232, 240);
-      doc.line(marginX, 27.2, pageW - marginX, 27.2);
+      doc.setDrawColor(203, 213, 225);
+      doc.line(marginX, 30.5, pageW - marginX, 30.5);
     };
 
     // =========================================================================
@@ -117,49 +128,124 @@ export class ExecutiveReportService {
         .toFixed(1)
     );
 
-    // Custos financeiros via CostService
+    // Custos financeiros por Unidade Macro e por Setor
     let totalFuelLiters = 0;
     let totalFuelCost = 0;
     let totalMaintCost = 0;
     let totalTollCost = 0;
+
     const costByUnit = new Map<
       string,
       { unit: string; trips: number; km: number; liters: number; fuelCost: number; maintCost: number; totalCost: number }
     >();
 
-    confirmedTrips.forEach((t) => {
-      const v = vehicles.find((item) => item.id === t.allocated_vehicle_id);
-      const breakdown = CostService.calculateTripCost(t, v);
-      const toll = Number(t.toll_amount) || 0;
-      totalFuelLiters += breakdown.fuelLiters;
-      totalFuelCost += breakdown.fuelCost;
-      totalMaintCost += breakdown.operationalCost;
-      totalTollCost += toll;
+    // Análise completa por Setor / Unidade Solicitante (requesting_unit + macro_unit)
+    const sectorMap = new Map<
+      string,
+      {
+        sector: string;
+        macroUnit: string;
+        total: number;
+        confirmed: number;
+        rejected: number;
+        cancelled: number;
+        inDeadline: number;
+        passengers: number;
+        km: number;
+        cost: number;
+      }
+    >();
 
-      const u = t.macro_unit || 'Outros';
-      const cur = costByUnit.get(u) || {
-        unit: u,
-        trips: 0,
+    trips.forEach((t) => {
+      const macro = t.macro_unit || 'Outros';
+      const sectorName = (t.requesting_unit || '').trim() || `Setor Geral (${macro})`;
+      const sectorKey = `${sectorName}__${macro}`;
+      const curSec = sectorMap.get(sectorKey) || {
+        sector: sectorName,
+        macroUnit: macro,
+        total: 0,
+        confirmed: 0,
+        rejected: 0,
+        cancelled: 0,
+        inDeadline: 0,
+        passengers: 0,
         km: 0,
-        liters: 0,
-        fuelCost: 0,
-        maintCost: 0,
-        totalCost: 0,
+        cost: 0,
       };
-      cur.trips += 1;
-      cur.km += breakdown.km;
-      cur.liters += breakdown.fuelLiters;
-      cur.fuelCost += breakdown.fuelCost;
-      cur.maintCost += breakdown.operationalCost;
-      cur.totalCost += breakdown.totalCost + toll;
-      costByUnit.set(u, cur);
+      curSec.total += 1;
+      if (t.status === 'Confirmado ao Demandante') curSec.confirmed += 1;
+      if (t.status === 'Indeferido') curSec.rejected += 1;
+      if (t.status.includes('Cancelado')) curSec.cancelled += 1;
+      if (t.status_deadline === 'Dentro do Prazo') curSec.inDeadline += 1;
+
+      if (t.status === 'Confirmado ao Demandante') {
+        const v = vehicles.find((item) => item.id === t.allocated_vehicle_id);
+        const breakdown = CostService.calculateTripCost(t, v);
+        const toll = Number(t.toll_amount) || 0;
+        const tripTotalCost = breakdown.totalCost + toll;
+
+        curSec.passengers += Number(t.passenger_count) || 0;
+        curSec.km += breakdown.km;
+        curSec.cost += tripTotalCost;
+
+        totalFuelLiters += breakdown.fuelLiters;
+        totalFuelCost += breakdown.fuelCost;
+        totalMaintCost += breakdown.operationalCost;
+        totalTollCost += toll;
+
+        const curUnit = costByUnit.get(macro) || {
+          unit: macro,
+          trips: 0,
+          km: 0,
+          liters: 0,
+          fuelCost: 0,
+          maintCost: 0,
+          totalCost: 0,
+        };
+        curUnit.trips += 1;
+        curUnit.km += breakdown.km;
+        curUnit.liters += breakdown.fuelLiters;
+        curUnit.fuelCost += breakdown.fuelCost;
+        curUnit.maintCost += breakdown.operationalCost;
+        curUnit.totalCost += tripTotalCost;
+        costByUnit.set(macro, curUnit);
+      }
+
+      sectorMap.set(sectorKey, curSec);
     });
+
     const totalOperationalCost = totalFuelCost + totalMaintCost + totalTollCost;
+    const sectorsSorted = Array.from(sectorMap.values()).sort(
+      (a, b) => b.total - a.total || b.km - a.km
+    );
+
+    // Top Solicitantes nominais
+    const requesterMap = new Map<string, { name: string; sector: string; total: number; confirmed: number; km: number }>();
+    trips.forEach((t) => {
+      const name = (t.requester_name || 'Não informado').trim();
+      const cur = requesterMap.get(name) || {
+        name,
+        sector: `${t.requesting_unit || t.macro_unit} (${t.macro_unit})`,
+        total: 0,
+        confirmed: 0,
+        km: 0,
+      };
+      cur.total += 1;
+      if (t.status === 'Confirmado ao Demandante') {
+        cur.confirmed += 1;
+        cur.km += t.real_km && t.real_km > 0 ? t.real_km : t.estimated_km || 0;
+      }
+      requesterMap.set(name, cur);
+    });
+    const topRequesters = Array.from(requesterMap.values())
+      .sort((a, b) => b.total - a.total || b.km - a.km)
+      .slice(0, 8);
 
     // Heatmap Dia da Semana (Seg=0..Dom=6) × Faixa de Horário (0: 00-06, 1: 06-12, 2: 12-18, 3: 18-24)
     const dayLabels = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
     const slotLabels = ['Madrugada (00h–06h)', 'Manhã (06h–12h)', 'Tarde (12h–18h)', 'Noite (18h–24h)'];
     const heatmap: number[][] = Array.from({ length: 7 }, () => [0, 0, 0, 0]);
+    const slotTotals = [0, 0, 0, 0];
     let maxHeatCell = 0;
     let peakDayIdx = 0;
     let peakSlotIdx = 1;
@@ -168,11 +254,12 @@ export class ExecutiveReportService {
       try {
         const d = parseISO(t.departure_datetime);
         if (!isValid(d)) return;
-        const jsDay = getDay(d); // 0=Dom, 1=Seg...
+        const jsDay = getDay(d);
         const dayIdx = jsDay === 0 ? 6 : jsDay - 1;
         const h = getHours(d);
         const slotIdx = h < 6 ? 0 : h < 12 ? 1 : h < 18 ? 2 : 3;
         heatmap[dayIdx][slotIdx] += 1;
+        slotTotals[slotIdx] += 1;
         if (heatmap[dayIdx][slotIdx] > maxHeatCell) {
           maxHeatCell = heatmap[dayIdx][slotIdx];
           peakDayIdx = dayIdx;
@@ -183,7 +270,7 @@ export class ExecutiveReportService {
       }
     });
 
-    // Unidades Macro (Demanda + Aderência ao prazo)
+    // Unidades Macro
     const unitMap = new Map<string, { unit: string; total: number; inDeadline: number; outDeadline: number }>();
     trips.forEach((t) => {
       const u = t.macro_unit || 'Outros';
@@ -237,7 +324,14 @@ export class ExecutiveReportService {
             : quotaSettings.defaultVehicleMonthlyKm;
         const percent = quotaKm > 0 ? Number(((usedKm / quotaKm) * 100).toFixed(1)) : 0;
         const contractor = contractors.find((c) => c.id === v.contractor_id);
-        return { vehicle: v, contractorName: contractor?.name || 'Contratada', trips: vTrips.length, usedKm, quotaKm, percent };
+        return {
+          vehicle: v,
+          contractorName: contractor?.name || 'Contratada',
+          trips: vTrips.length,
+          usedKm,
+          quotaKm,
+          percent,
+        };
       })
       .filter((s) => s.usedKm > 0)
       .sort((a, b) => b.percent - a.percent || b.usedKm - a.usedKm);
@@ -247,7 +341,9 @@ export class ExecutiveReportService {
     );
 
     // Auditoria KM Previsto × KM Real
-    const realKmTrips = confirmedTrips.filter((t) => t.real_km !== undefined && t.real_km !== null && t.real_km > 0);
+    const realKmTrips = confirmedTrips.filter(
+      (t) => t.real_km !== undefined && t.real_km !== null && t.real_km > 0
+    );
     const auditEstSum = realKmTrips.reduce((acc, t) => acc + (t.estimated_km || 0), 0);
     const auditRealSum = realKmTrips.reduce((acc, t) => acc + (t.real_km || 0), 0);
     const auditDiffKm = Number((auditRealSum - auditEstSum).toFixed(1));
@@ -258,42 +354,54 @@ export class ExecutiveReportService {
       return Math.abs(((t.real_km! - est) / est) * 100) >= 15;
     });
 
-    // Top 5 Rotas
+    // Top 5 Rotas e Top Motoristas
     const routeMap = new Map<string, { route: string; count: number; km: number }>();
+    const driverMap = new Map<string, { name: string; count: number; km: number }>();
     confirmedTrips.forEach((t) => {
       const label = `${getCityName(t.origin_city_id)} -> ${getCityName(t.destination_city_id)}`;
-      const cur = routeMap.get(label) || { route: label, count: 0, km: 0 };
-      cur.count += 1;
-      cur.km += t.real_km && t.real_km > 0 ? t.real_km : t.estimated_km || 0;
-      routeMap.set(label, cur);
+      const km = t.real_km && t.real_km > 0 ? t.real_km : t.estimated_km || 0;
+      const curR = routeMap.get(label) || { route: label, count: 0, km: 0 };
+      curR.count += 1;
+      curR.km += km;
+      routeMap.set(label, curR);
+
+      if (t.allocated_driver_id) {
+        const drv = drivers.find((d) => d.id === t.allocated_driver_id);
+        const drvName = drv ? drv.name : t.allocated_driver_id;
+        const curD = driverMap.get(drvName) || { name: drvName, count: 0, km: 0 };
+        curD.count += 1;
+        curD.km += km;
+        driverMap.set(drvName, curD);
+      }
     });
     const topRoutes = Array.from(routeMap.values())
+      .sort((a, b) => b.count - a.count || b.km - a.km)
+      .slice(0, 5);
+    const topDrivers = Array.from(driverMap.values())
       .sort((a, b) => b.count - a.count || b.km - a.km)
       .slice(0, 5);
 
     let hasStartedPages = false;
     const ensureNewPage = () => {
-      if (hasStartedPages) {
-        doc.addPage();
-      }
+      if (hasStartedPages) doc.addPage();
       hasStartedPages = true;
     };
 
     // =========================================================================
-    // PÁGINA 1: SUMÁRIO EXECUTIVO + ANÁLISE INTELIGENTE + DISTRIBUIÇÃO STATUS
+    // PÁGINA 1 (A4 RETRATO): SUMÁRIO EXECUTIVO + GRÁFICO STATUS + ANÁLISE INTELIGENTE
     // =========================================================================
     if (options.includeExecutiveSummary) {
       ensureNewPage();
       drawPageHeader('1. Sumário Executivo, Indicadores-Chave (KPIs) & Análise Inteligente');
 
-      // 6 KPI Cards (3 colunas x 2 linhas)
-      const cardW = (contentW - 8) / 3; // ~87mm
-      const cardH = 22;
+      // 6 Cards de KPIs em grade 2 colunas x 3 linhas (otimizado para A4 Retrato)
+      const cardW = (contentW - 4) / 2; // 91mm
+      const cardH = 21;
       const kpis = [
         {
-          label: 'TOTAL DE DEMANDAS',
-          value: `${total} processos`,
-          sub: `${confirmedCount} confirmadas (${attendanceRate}% de atendimento)`,
+          label: 'TOTAL DE DEMANDAS & ATENDIMENTO',
+          value: `${total} processos (${attendanceRate}%)`,
+          sub: `${confirmedCount} confirmadas • ${pendingTrips.length} pendentes`,
           accent: [37, 99, 235] as [number, number, number],
         },
         {
@@ -315,102 +423,103 @@ export class ExecutiveReportService {
           accent: [16, 185, 129] as [number, number, number],
         },
         {
-          label: 'ADERÊNCIA AO PRAZO',
-          value: `${deadlineRate}% no prazo`,
-          sub: `${inDeadlineCount} dentro do prazo • ${outDeadlineCount} fora do prazo`,
+          label: 'ADERÊNCIA AO PRAZO REGIMENTAL',
+          value: `${deadlineRate}% dentro do prazo`,
+          sub: `${inDeadlineCount} no prazo • ${outDeadlineCount} fora do prazo`,
           accent: [217, 119, 6] as [number, number, number],
         },
         {
           label: 'INDEFERIMENTOS & CANCELAMENTOS',
           value: `${rejectedTrips.length} indef. | ${cancelledTrips.length} cancel.`,
-          sub: `${pendingTrips.length} pendente(s) de análise no período`,
+          sub: `${alteredTrips.length} demanda(s) com data alterada`,
           accent: [225, 29, 72] as [number, number, number],
         },
       ];
 
       kpis.forEach((k, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
+        const col = i % 2;
+        const row = Math.floor(i / 2);
         const x = marginX + col * (cardW + 4);
-        const y = 31 + row * (cardH + 4);
+        const y = 34 + row * (cardH + 3.5);
 
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         doc.roundedRect(x, y, cardW, cardH, 2.5, 2.5, 'FD');
 
         doc.setFillColor(k.accent[0], k.accent[1], k.accent[2]);
-        doc.rect(x, y + 2, 2, cardH - 4, 'F');
+        doc.rect(x, y + 2, 2.2, cardH - 4, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.2);
+        doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text(k.label, x + 5, y + 6);
+        doc.text(k.label, x + 5, y + 5.8);
 
-        doc.setFontSize(12.5);
+        doc.setFontSize(12);
         doc.setTextColor(15, 23, 42);
-        doc.text(k.value, x + 5, y + 13.5);
+        doc.text(k.value, x + 5, y + 13);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.2);
         doc.setTextColor(71, 85, 105);
-        doc.text(k.sub, x + 5, y + 19);
+        doc.text(k.sub, x + 5, y + 18.2);
       });
 
-      // Gráfico de Barras Horizontais: Distribuição por Status (Esquerda) + Análise Inteligente (Direita)
-      const splitY = 84;
-      const leftW = 108;
-      const rightX = marginX + leftW + 6;
-      const rightW = contentW - leftW - 6;
-
-      // Esquerda: Distribuição por Status
+      // Gráfico de Distribuição por Situação (largura total)
+      const statusY = 110;
+      const statusH = 54;
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(marginX, splitY, leftW, 106, 2.5, 2.5, 'FD');
+      doc.roundedRect(marginX, statusY, contentW, statusH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text('Distribuição das Solicitações por Situação', marginX + 4, splitY + 7);
+      doc.text('Distribuição das Solicitações por Situação Operacional', marginX + 4, statusY + 6.5);
 
       const statusBars = [
         { label: 'Confirmado ao Demandante', count: confirmedCount, color: [5, 150, 105] as [number, number, number] },
         { label: 'Pendente de Análise', count: pendingTrips.length, color: [245, 158, 11] as [number, number, number] },
         { label: 'Indeferido', count: rejectedTrips.length, color: [225, 29, 72] as [number, number, number] },
-        { label: 'Cancelado (Dem./Exec.)', count: cancelledTrips.length, color: [100, 116, 139] as [number, number, number] },
-        { label: 'Alterado Data Demanda', count: alteredTrips.length, color: [59, 130, 246] as [number, number, number] },
+        { label: 'Cancelado (Demandante / Exec.)', count: cancelledTrips.length, color: [100, 116, 139] as [number, number, number] },
+        { label: 'Alterado a Data da Demanda', count: alteredTrips.length, color: [59, 130, 246] as [number, number, number] },
       ];
 
       statusBars.forEach((bar, idx) => {
-        const by = splitY + 16 + idx * 17;
+        const by = statusY + 13.5 + idx * 8;
         const pct = total > 0 ? Math.round((bar.count / total) * 100) : 0;
-        const barMaxW = leftW - 12;
+        const barX = marginX + 54;
+        const barMaxW = contentW - 82;
         const barW = total > 0 ? Math.max(1.5, (bar.count / total) * barMaxW) : 0;
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.8);
+        doc.setFontSize(7.5);
         doc.setTextColor(51, 65, 85);
-        doc.text(bar.label, marginX + 5, by);
-        doc.text(`${bar.count} (${pct}%)`, marginX + leftW - 5, by, { align: 'right' });
+        doc.text(bar.label, marginX + 4, by + 3.5);
 
         doc.setFillColor(241, 245, 249);
-        doc.roundedRect(marginX + 5, by + 2.2, barMaxW, 5.5, 1.5, 1.5, 'F');
+        doc.roundedRect(barX, by, barMaxW, 4.8, 1.2, 1.2, 'F');
         if (bar.count > 0) {
           doc.setFillColor(bar.color[0], bar.color[1], bar.color[2]);
-          doc.roundedRect(marginX + 5, by + 2.2, barW, 5.5, 1.5, 1.5, 'F');
+          doc.roundedRect(barX, by, barW, 4.8, 1.2, 1.2, 'F');
         }
+
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${bar.count} (${pct}%)`, marginX + contentW - 4, by + 3.5, { align: 'right' });
       });
 
-      // Direita: Bloco de Análise Inteligente Automática
+      // Bloco de Análise Inteligente Automática
+      const aiY = statusY + statusH + 6;
+      const aiH = pageH - aiY - 16; // ~111mm
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(148, 163, 184);
-      doc.roundedRect(rightX, splitY, rightW, 106, 2.5, 2.5, 'FD');
+      doc.roundedRect(marginX, aiY, contentW, aiH, 2.5, 2.5, 'FD');
 
       doc.setFillColor(15, 23, 42);
-      doc.roundedRect(rightX, splitY, rightW, 9, 2.5, 2.5, 'F');
+      doc.roundedRect(marginX, aiY, contentW, 9.5, 2.5, 2.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(255, 255, 255);
-      doc.text('ANÁLISE INTELIGENTE & DIAGNÓSTICO GERENCIAL AUTOMÁTICO', rightX + 4, splitY + 6);
+      doc.text('ANÁLISE INTELIGENTE & DIAGNÓSTICO GERENCIAL AUTOMÁTICO', marginX + 4.5, aiY + 6.3);
 
       const insights: string[] = [];
       if (total === 0) {
@@ -420,279 +529,444 @@ export class ExecutiveReportService {
           attendanceRate >= 80
             ? 'desempenho excelente de atendimento'
             : attendanceRate >= 60
-            ? 'nível moderado de atendimento (recomenda-se revisar gargalos)'
+            ? 'nível moderado de atendimento (recomenda-se atuar nos gargalos)'
             : 'nível crítico de atendimento (alta taxa de não atendimento)';
         const topUnit = topUnits[0];
+        const topSector = sectorsSorted[0];
+
         insights.push(
-          `1. Eficiência de Atendimento: A taxa de confirmação foi de ${attendanceRate}% (${confirmedCount} de ${total} demandas), indicando ${attendanceEval}.` +
-            (topUnit
-              ? ` A unidade macro com maior volume foi ${topUnit.unit}, concentrando ${topUnit.total} solicitações (${Math.round((topUnit.total / total) * 100)}% do total).`
-              : '')
+          `1. Eficiência de Atendimento: Taxa de confirmação de ${attendanceRate}% (${confirmedCount} de ${total} demandas), indicando ${attendanceEval}.` +
+            (topUnit ? ` A unidade macro líder foi ${topUnit.unit} (${topUnit.total} demandas — ${Math.round((topUnit.total / total) * 100)}%).` : '')
         );
+
+        if (topSector) {
+          insights.push(
+            `2. Setor / Unidade Solicitante com Maior Demanda: "${topSector.sector}" (${topSector.macroUnit}) liderou com ${topSector.total} solicitações, ${topSector.confirmed} viagens confirmadas, ${topSector.km.toFixed(0)} km rodados e custo estimado de ${formatBRL(topSector.cost)}.`
+          );
+        }
 
         if (maxHeatCell > 0) {
           insights.push(
-            `2. Pico Operacional (Gargalo de Frota): O maior congestionamento de saídas ocorreu às ${dayLabels[peakDayIdx]}s no turno ${slotLabels[peakSlotIdx]} (${maxHeatCell} viagens). Recomenda-se priorizar o agrupamento em Carona Solidária nessa janela.`
+            `3. Pico Operacional (Gargalo de Frota): O maior volume de saídas ocorreu às ${dayLabels[peakDayIdx]}s no turno ${slotLabels[peakSlotIdx]} (${maxHeatCell} viagens). Recomenda-se priorizar o agrupamento em Carona Solidária nessa janela.`
           );
         }
 
         if (quotaAlertVehicles.length > 0) {
           const plates = quotaAlertVehicles
-            .slice(0, 4)
+            .slice(0, 5)
             .map((v) => `${v.vehicle.plate} (${v.percent}%)`)
             .join(', ');
           insights.push(
-            `3. Alerta de Franquia Contratada (>= ${quotaSettings.alertThresholdPercent}%): ${quotaAlertVehicles.length} veículo(s) da contratada atingiram o limiar preventivo — destaque para ${plates}. Recomenda-se redistribuir escalas para placas com menor consumo.`
+            `4. Alerta de Franquia Contratada (>= ${quotaSettings.alertThresholdPercent}%): ${quotaAlertVehicles.length} veículo(s) da contratada atingiram o limiar preventivo — ${plates}. Recomenda-se redistribuir escalas para placas com menor consumo.`
           );
         } else {
           insights.push(
-            `3. Franquia Mensal Contratada: Todos os veículos vinculados às empresas contratadas permaneceram abaixo do limiar preventivo de ${quotaSettings.alertThresholdPercent}% da franquia no período.`
+            `4. Franquia Mensal Contratada: Todos os veículos vinculados às empresas contratadas permaneceram abaixo do limiar preventivo de ${quotaSettings.alertThresholdPercent}% da franquia no período.`
           );
         }
 
         insights.push(
-          `4. Aderência ao Prazo Regimental: ${deadlineRate}% das demandas foram protocoladas dentro do prazo (${inDeadlineCount} no prazo vs. ${outDeadlineCount} fora do prazo).` +
+          `5. Aderência ao Prazo Regimental: ${deadlineRate}% das solicitações foram enviadas dentro do prazo (${inDeadlineCount} no prazo vs. ${outDeadlineCount} fora do prazo).` +
             (worstDeadlineUnit
-              ? ` A unidade ${worstDeadlineUnit.unit} concentrou o maior número de pedidos fora do prazo (${worstDeadlineUnit.outDeadline}), sugerindo ação educativa junto às chefias.`
+              ? ` A unidade ${worstDeadlineUnit.unit} concentrou ${worstDeadlineUnit.outDeadline} pedido(s) fora do prazo.`
               : '')
         );
 
         if (rejectionsSorted.length > 0) {
           const [topReason, topReasonCount] = rejectionsSorted[0];
           insights.push(
-            `5. Principal Causa de Indeferimento: "${topReason}" representou ${topReasonCount} de ${rejectedTrips.length} indeferimento(s) (${Math.round((topReasonCount / rejectedTrips.length) * 100)}%).`
+            `6. Principal Causa de Indeferimento: "${topReason}" representou ${topReasonCount} de ${rejectedTrips.length} indeferimento(s) (${Math.round((topReasonCount / rejectedTrips.length) * 100)}%).`
           );
         }
 
         if (realKmTrips.length > 0) {
           insights.push(
-            `6. Auditoria KM Previsto x Real: Em ${realKmTrips.length} viagem(ns) com KM real apurado, a variação líquida foi de ${auditDiffKm > 0 ? '+' : ''}${auditDiffKm} km (${auditDiffPct > 0 ? '+' : ''}${auditDiffPct}%), com ${highDeviationTrips.length} viagem(ns) acima de ±15% de desvio.`
+            `7. Auditoria KM Previsto × Real: Em ${realKmTrips.length} viagem(ns) com KM real apurado, a variação líquida foi de ${auditDiffKm > 0 ? '+' : ''}${auditDiffKm} km (${auditDiffPct > 0 ? '+' : ''}${auditDiffPct}%), com ${highDeviationTrips.length} viagem(ns) acima de ±15% de desvio.`
           );
         }
       }
 
-      let iy = splitY + 15;
+      let iy = aiY + 15.5;
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.1);
+      doc.setFontSize(8.2);
       doc.setTextColor(30, 41, 59);
       insights.forEach((line) => {
-        const wrapped = doc.splitTextToSize(line, rightW - 9);
-        if (iy + wrapped.length * 4.1 < splitY + 103) {
-          doc.text(wrapped, rightX + 4.5, iy);
-          iy += wrapped.length * 4.1 + 3.2;
+        const wrapped = doc.splitTextToSize(line, contentW - 9);
+        if (iy + wrapped.length * 4.2 < aiY + aiH - 3) {
+          doc.text(wrapped, marginX + 4.5, iy);
+          iy += wrapped.length * 4.2 + 3;
         }
       });
     }
 
     // =========================================================================
-    // PÁGINA 2: HEATMAP OPERACIONAL + UNIDADES MACRO + FINALIDADE & INDEFERIMENTOS
+    // PÁGINA 2 (A4 RETRATO): HEATMAP OPERACIONAL + UNIDADES MACRO + FINALIDADES & INDEFERIMENTOS
     // =========================================================================
     if (options.includeHeatmapAndRankings) {
       ensureNewPage();
       drawPageHeader('2. Heatmap Operacional (Dia × Turno), Unidades Macro & Indeferimentos');
 
-      // BLOCO SUPERIOR ESQUERDO: HEATMAP VETORIAL COLORIDO
-      const heatX = marginX;
-      const heatY = 31;
-      const heatW = 148;
-      const heatH = 82;
-
+      // BLOCO 1: HEATMAP VETORIAL COLORIDO (Largura total A4 Retrato)
+      const heatY = 34;
+      const heatH = 88;
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(heatX, heatY, heatW, heatH, 2.5, 2.5, 'FD');
+      doc.roundedRect(marginX, heatY, contentW, heatH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.8);
+      doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text('Heatmap de Saídas (Dia da Semana × Turno)', heatX + 4, heatY + 6.5);
+      doc.text('Heatmap Operacional de Saídas (Dia da Semana × Faixa de Horário)', marginX + 4, heatY + 6.5);
+
+      // Legenda de calor
+      const legItems: Array<{ label: string; color: [number, number, number] }> = [
+        { label: 'Baixo', color: [186, 230, 253] },
+        { label: 'Médio', color: [250, 204, 21] },
+        { label: 'Alto', color: [249, 115, 22] },
+        { label: 'Pico', color: [225, 29, 72] },
+      ];
+      let lx = marginX + contentW - 64;
+      doc.setFontSize(6.5);
+      legItems.forEach((item) => {
+        doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+        doc.rect(lx, heatY + 3.5, 3.2, 3.2, 'F');
+        doc.setTextColor(71, 85, 105);
+        doc.text(item.label, lx + 4.2, heatY + 6.2);
+        lx += 15.5;
+      });
 
       const labelColW = 24;
-      const totalColW = 16;
-      const cellW = (heatW - 8 - labelColW - totalColW) / 4;
+      const totalColW = 18;
+      const cellW = (contentW - 8 - labelColW - totalColW) / 4;
       const cellH = 8.2;
-      const gridTop = heatY + 15;
+      const gridTop = heatY + 15.5;
 
-      // Cabeçalhos de turno
-      doc.setFontSize(6.6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.2);
       doc.setTextColor(71, 85, 105);
-      ['00h–06h', '06h–12h', '12h–18h', '18h–24h'].forEach((sl, sIdx) => {
-        doc.text(sl, heatX + 4 + labelColW + sIdx * cellW + cellW / 2, gridTop - 2, { align: 'center' });
+      ['Madrugada (00-06h)', 'Manhã (06-12h)', 'Tarde (12-18h)', 'Noite (18-24h)'].forEach((sl, sIdx) => {
+        doc.text(sl, marginX + 4 + labelColW + sIdx * cellW + cellW / 2, gridTop - 2, { align: 'center' });
       });
-      doc.text('Total', heatX + 4 + labelColW + 4 * cellW + totalColW / 2, gridTop - 2, { align: 'center' });
+      doc.text('Total', marginX + 4 + labelColW + 4 * cellW + totalColW / 2, gridTop - 2, { align: 'center' });
 
       const getHeatColor = (val: number): [number, number, number] => {
         if (val <= 0 || maxHeatCell <= 0) return [248, 250, 252];
         const ratio = val / maxHeatCell;
-        if (ratio >= 0.8) return [225, 29, 72]; // Rose 600
-        if (ratio >= 0.55) return [249, 115, 22]; // Orange 500
-        if (ratio >= 0.3) return [250, 204, 21]; // Yellow 400
-        return [186, 230, 253]; // Sky 200
+        if (ratio >= 0.8) return [225, 29, 72];
+        if (ratio >= 0.55) return [249, 115, 22];
+        if (ratio >= 0.3) return [250, 204, 21];
+        return [186, 230, 253];
       };
 
       dayLabels.forEach((day, dIdx) => {
         const cy = gridTop + dIdx * (cellH + 1);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.2);
+        doc.setFontSize(7.6);
         doc.setTextColor(51, 65, 85);
-        doc.text(day, heatX + 4, cy + 5.5);
+        doc.text(day, marginX + 4, cy + 5.5);
 
         let rowTotal = 0;
         for (let sIdx = 0; sIdx < 4; sIdx++) {
           const val = heatmap[dIdx][sIdx];
           rowTotal += val;
-          const cx = heatX + 4 + labelColW + sIdx * cellW;
+          const cx = marginX + 4 + labelColW + sIdx * cellW;
           const [r, g, b] = getHeatColor(val);
           doc.setFillColor(r, g, b);
           doc.setDrawColor(226, 232, 240);
-          doc.roundedRect(cx + 0.5, cy, cellW - 1, cellH, 1.2, 1.2, 'FD');
+          doc.roundedRect(cx + 0.6, cy, cellW - 1.2, cellH, 1.2, 1.2, 'FD');
 
           const isDarkBg = maxHeatCell > 0 && val / maxHeatCell >= 0.55;
           doc.setTextColor(isDarkBg ? 255 : 15, isDarkBg ? 255 : 23, isDarkBg ? 255 : 42);
           doc.setFont('helvetica', val > 0 ? 'bold' : 'normal');
-          doc.setFontSize(7.5);
+          doc.setFontSize(7.8);
           doc.text(val > 0 ? String(val) : '-', cx + cellW / 2, cy + 5.5, { align: 'center' });
         }
 
-        // Total da linha
         doc.setTextColor(15, 23, 42);
         doc.setFont('helvetica', 'bold');
-        doc.text(String(rowTotal), heatX + 4 + labelColW + 4 * cellW + totalColW / 2, cy + 5.5, {
+        doc.text(String(rowTotal), marginX + 4 + labelColW + 4 * cellW + totalColW / 2, cy + 5.5, {
           align: 'center',
         });
       });
 
-      // BLOCO SUPERIOR DIREITO: TOP UNIDADES MACRO (Gráfico de Barras)
-      const unitX = heatX + heatW + 5;
-      const unitW = contentW - heatW - 5;
+      // Linha de totais por turno no rodapé do heatmap
+      const totY = gridTop + 7 * (cellH + 1) + 2;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.2);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Total Turno', marginX + 4, totY + 2);
+      slotTotals.forEach((st, sIdx) => {
+        const cx = marginX + 4 + labelColW + sIdx * cellW;
+        doc.text(String(st), cx + cellW / 2, totY + 2, { align: 'center' });
+      });
+      doc.text(String(total), marginX + 4 + labelColW + 4 * cellW + totalColW / 2, totY + 2, {
+        align: 'center',
+      });
+
+      // BLOCO 2: DEMANDA & ADERÊNCIA POR UNIDADE MACRO
+      const unitY = heatY + heatH + 5;
+      const unitH = 74;
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(unitX, heatY, unitW, heatH, 2.5, 2.5, 'FD');
+      doc.roundedRect(marginX, unitY, contentW, unitH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.8);
+      doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text('Demandas & Aderência por Unidade Macro', unitX + 4, heatY + 6.5);
+      doc.text('Demandas & Aderência ao Prazo por Unidade Macro (Top 8)', marginX + 4, unitY + 6.5);
 
-      const unitsToShow = topUnits.slice(0, 7);
+      const unitsToShow = topUnits.slice(0, 8);
       const maxUnitTotal = unitsToShow[0]?.total || 1;
       unitsToShow.forEach((u, idx) => {
-        const uy = heatY + 14 + idx * 9.5;
+        const uy = unitY + 12.5 + idx * 7.5;
         const pctDeadline = u.total > 0 ? Math.round((u.inDeadline / u.total) * 100) : 0;
-        const barMax = unitW - 44;
+        const barMax = contentW - 58;
         const bw = Math.max(2, (u.total / maxUnitTotal) * barMax);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.3);
+        doc.setFontSize(7.5);
         doc.setTextColor(15, 23, 42);
-        doc.text(u.unit, unitX + 4, uy + 3.8);
+        doc.text(u.unit, marginX + 4, uy + 3.6);
 
         doc.setFillColor(241, 245, 249);
-        doc.roundedRect(unitX + 20, uy, barMax, 5, 1.2, 1.2, 'F');
+        doc.roundedRect(marginX + 24, uy, barMax, 4.8, 1.2, 1.2, 'F');
         doc.setFillColor(15, 118, 110);
-        doc.roundedRect(unitX + 20, uy, bw, 5, 1.2, 1.2, 'F');
+        doc.roundedRect(marginX + 24, uy, bw, 4.8, 1.2, 1.2, 'F');
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.8);
+        doc.setFontSize(7.2);
         doc.setTextColor(51, 65, 85);
-        doc.text(`${u.total} (${pctDeadline}% pr.)`, unitX + unitW - 3, uy + 3.8, { align: 'right' });
+        doc.text(`${u.total} dem. (${pctDeadline}% no prazo)`, marginX + contentW - 4, uy + 3.6, {
+          align: 'right',
+        });
       });
 
-      // BLOCO INFERIOR: FINALIDADE INSTITUCIONAL (Esq) + MOTIVOS DE INDEFERIMENTO (Dir)
-      const bottomY = heatY + heatH + 5;
-      const bottomH = 72;
-      const halfW = (contentW - 5) / 2;
+      // BLOCO 3: FINALIDADE INSTITUCIONAL (Esq) + MOTIVOS DE INDEFERIMENTO (Dir)
+      const botY = unitY + unitH + 5;
+      const botH = pageH - botY - 16; // ~75mm
+      const halfW = (contentW - 4) / 2;
 
-      // Finalidades
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(marginX, bottomY, halfW, bottomH, 2.5, 2.5, 'FD');
+      doc.roundedRect(marginX, botY, halfW, botH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.8);
+      doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text('Finalidade Institucional das Viagens', marginX + 4, bottomY + 6.5);
+      doc.text('Finalidade Institucional', marginX + 4, botY + 6.5);
 
       const maxAct = activitiesSorted[0]?.[1] || 1;
       activitiesSorted.slice(0, 6).forEach(([act, cnt], idx) => {
-        const ay = bottomY + 14 + idx * 9.5;
+        const ay = botY + 13 + idx * 9.5;
         const pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
-        const barMax = halfW - 56;
+        const barMax = halfW - 10;
         const bw = Math.max(2, (cnt / maxAct) * barMax);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.4);
+        doc.setFontSize(7.2);
         doc.setTextColor(51, 65, 85);
-        doc.text(act.slice(0, 20), marginX + 4, ay + 3.8);
+        doc.text(act.slice(0, 26), marginX + 4, ay);
+        doc.text(`${cnt} (${pct}%)`, marginX + halfW - 4, ay, { align: 'right' });
 
         doc.setFillColor(241, 245, 249);
-        doc.roundedRect(marginX + 36, ay, barMax, 5, 1.2, 1.2, 'F');
+        doc.roundedRect(marginX + 4, ay + 1.5, barMax, 4, 1, 1, 'F');
         doc.setFillColor(37, 99, 235);
-        doc.roundedRect(marginX + 36, ay, bw, 5, 1.2, 1.2, 'F');
-
-        doc.text(`${cnt} (${pct}%)`, marginX + halfW - 4, ay + 3.8, { align: 'right' });
+        doc.roundedRect(marginX + 4, ay + 1.5, bw, 4, 1, 1, 'F');
       });
 
-      // Motivos de Indeferimento
-      const rejX = marginX + halfW + 5;
+      const rejX = marginX + halfW + 4;
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(rejX, bottomY, halfW, bottomH, 2.5, 2.5, 'FD');
+      doc.roundedRect(rejX, botY, halfW, botH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.8);
+      doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(`Motivos de Indeferimento (${rejectedTrips.length})`, rejX + 4, bottomY + 6.5);
+      doc.text(`Motivos de Indeferimento (${rejectedTrips.length})`, rejX + 4, botY + 6.5);
 
       if (rejectionsSorted.length === 0) {
         doc.setFont('helvetica', 'italic');
-        doc.setFontSize(8.2);
+        doc.setFontSize(8);
         doc.setTextColor(5, 150, 105);
-        doc.text('Nenhum indeferimento registrado neste período.', rejX + 4, bottomY + 20);
+        doc.text('Nenhum indeferimento registrado neste período.', rejX + 4, botY + 18);
       } else {
         const maxRej = rejectionsSorted[0][1] || 1;
         rejectionsSorted.slice(0, 5).forEach(([reason, cnt], idx) => {
-          const ry = bottomY + 14 + idx * 10.5;
+          const ry = botY + 13 + idx * 10.5;
           const pct = Math.round((cnt / rejectedTrips.length) * 100);
-          const barMax = halfW - 12;
+          const barMax = halfW - 10;
           const bw = Math.max(2, (cnt / maxRej) * barMax);
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.2);
+          doc.setFontSize(7);
           doc.setTextColor(51, 65, 85);
-          doc.text(reason.slice(0, 48), rejX + 4, ry);
+          doc.text(reason.slice(0, 32), rejX + 4, ry);
           doc.text(`${cnt} (${pct}%)`, rejX + halfW - 4, ry, { align: 'right' });
 
           doc.setFillColor(254, 242, 242);
-          doc.roundedRect(rejX + 4, ry + 1.8, barMax, 4.5, 1.2, 1.2, 'F');
+          doc.roundedRect(rejX + 4, ry + 1.5, barMax, 4, 1, 1, 'F');
           doc.setFillColor(225, 29, 72);
-          doc.roundedRect(rejX + 4, ry + 1.8, bw, 4.5, 1.2, 1.2, 'F');
+          doc.roundedRect(rejX + 4, ry + 1.5, bw, 4, 1, 1, 'F');
         });
       }
     }
 
     // =========================================================================
-    // PÁGINA 3: FINANCEIRO, FRANQUIA CONTRATADA (≥75%) & AUDITORIA DE KM
+    // PÁGINA 3 (A4 RETRATO): ANÁLISE DETALHADA POR SETOR / UNIDADE SOLICITANTE
+    // =========================================================================
+    if (includeSectors) {
+      ensureNewPage();
+      drawPageHeader('3. Análise Detalhada por Setor / Unidade Solicitante & Maiores Demandantes');
+
+      // Gráfico de Barras — Top 8 Setores Solicitantes
+      const secChartY = 34;
+      const secChartH = 68;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(marginX, secChartY, contentW, secChartH, 2.5, 2.5, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.8);
+      doc.setTextColor(15, 23, 42);
+      doc.text(
+        `Top Setores / Unidades Solicitantes (${sectorsSorted.length} setores ativos no período)`,
+        marginX + 4,
+        secChartY + 6.5
+      );
+
+      const topSectorsChart = sectorsSorted.slice(0, 7);
+      const maxSecTotal = topSectorsChart[0]?.total || 1;
+      topSectorsChart.forEach((sec, idx) => {
+        const sy = secChartY + 12.5 + idx * 7.6;
+        const barX = marginX + 68;
+        const barMax = contentW - 102;
+        const bw = Math.max(2, (sec.total / maxSecTotal) * barMax);
+        const confRate = sec.total > 0 ? Math.round((sec.confirmed / sec.total) * 100) : 0;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.1);
+        doc.setTextColor(15, 23, 42);
+        const label = `${sec.sector.slice(0, 30)} (${sec.macroUnit})`;
+        doc.text(label, marginX + 4, sy + 3.6);
+
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(barX, sy, barMax, 4.6, 1.2, 1.2, 'F');
+        doc.setFillColor(79, 70, 229); // Indigo
+        doc.roundedRect(barX, sy, bw, 4.6, 1.2, 1.2, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`${sec.total} dem. (${confRate}% conf.)`, marginX + contentW - 4, sy + 3.6, {
+          align: 'right',
+        });
+      });
+
+      // Tabela Completa por Setor / Unidade Solicitante
+      const secTableStartY = secChartY + secChartH + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Quadro Consolidado por Setor Solicitante (Demandas, Prazo, KM e Custo)', marginX, secTableStartY);
+
+      autoTable(doc, {
+        startY: secTableStartY + 2,
+        margin: { left: marginX, right: marginX, bottom: 16 },
+        head: [[
+          'Setor / Unidade Solicitante',
+          'Macro',
+          'Dem.',
+          'Conf.',
+          'Ind./Can.',
+          'Prazo',
+          'Pax',
+          'KM',
+          'Custo Est.',
+        ]],
+        body:
+          sectorsSorted.length > 0
+            ? sectorsSorted.map((s) => [
+                s.sector.length > 34 ? `${s.sector.slice(0, 34)}...` : s.sector,
+                s.macroUnit,
+                String(s.total),
+                `${s.confirmed} (${s.total > 0 ? Math.round((s.confirmed / s.total) * 100) : 0}%)`,
+                `${s.rejected}/${s.cancelled}`,
+                `${s.total > 0 ? Math.round((s.inDeadline / s.total) * 100) : 0}%`,
+                String(s.passengers),
+                `${s.km.toFixed(0)}`,
+                formatBRL(s.cost),
+              ])
+            : [['Sem dados de setores no período', '-', '-', '-', '-', '-', '-', '-', '-']],
+        styles: { fontSize: 6.9, cellPadding: 1.6 },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          0: { cellWidth: 52 },
+          1: { cellWidth: 16 },
+          2: { cellWidth: 11, halign: 'center' },
+          3: { cellWidth: 20, halign: 'center' },
+          4: { cellWidth: 15, halign: 'center' },
+          5: { cellWidth: 13, halign: 'center' },
+          6: { cellWidth: 12, halign: 'right' },
+          7: { cellWidth: 18, halign: 'right' },
+          8: { cellWidth: 29, halign: 'right', fontStyle: 'bold' },
+        },
+      });
+
+      // Top Solicitantes Nominais (se couber na página atual, senão abre nova página)
+      let afterSecY = ((doc as any).lastAutoTable?.finalY || 200) + 7;
+      if (topRequesters.length > 0) {
+        if (afterSecY > pageH - 65) {
+          doc.addPage();
+          drawPageHeader('3. Análise por Setor (Continuação) — Top Solicitantes do Período');
+          afterSecY = 34;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Ranking dos Maiores Solicitantes Nominais no Período', marginX, afterSecY);
+
+        autoTable(doc, {
+          startY: afterSecY + 2,
+          margin: { left: marginX, right: marginX, bottom: 16 },
+          head: [['#', 'Solicitante', 'Setor / Unidade', 'Demandas', 'Confirmadas', 'KM Consolidado']],
+          body: topRequesters.map((r, i) => [
+            `${i + 1}º`,
+            r.name,
+            r.sector.slice(0, 38),
+            String(r.total),
+            String(r.confirmed),
+            `${r.km.toFixed(0)} km`,
+          ]),
+          styles: { fontSize: 7.2, cellPadding: 1.7 },
+          headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+      }
+    }
+
+    // =========================================================================
+    // PÁGINA 4 (A4 RETRATO): CUSTOS, FRANQUIA CONTRATADA (≥75%) & AUDITORIA KM
     // =========================================================================
     if (options.includeFinancialAndQuota) {
       ensureNewPage();
-      drawPageHeader('3. Centro de Custos, Franquia Contratada (Alerta >= 75%) & Auditoria de KM');
+      drawPageHeader('4. Centro de Custos, Franquia Contratada (>= 75%) & Auditoria de KM');
 
-      // Tabela 1: Centro de Custos por Unidade Macro
       const unitCosts = Array.from(costByUnit.values()).sort((a, b) => b.totalCost - a.totalCost);
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text('Centro de Custos Operacionais por Unidade Macro (Viagens Confirmadas)', marginX, 32);
+      doc.text('Centro de Custos Operacionais por Unidade Macro (Viagens Confirmadas)', marginX, 35);
 
       autoTable(doc, {
-        startY: 34,
-        margin: { left: marginX, right: marginX },
-        head: [['Unidade Macro', 'Viagens', 'KM Total', 'Combustível (L)', 'Custo Combustível', 'Manutenção', 'Custo Total']],
+        startY: 37,
+        margin: { left: marginX, right: marginX, bottom: 16 },
+        head: [['Unidade', 'Viagens', 'KM Total', 'Comb. (L)', 'Custo Comb.', 'Manutenção', 'Custo Total']],
         body:
           unitCosts.length > 0
             ? [
-                ...unitCosts.slice(0, 8).map((u) => [
+                ...unitCosts.map((u) => [
                   u.unit,
                   String(u.trips),
                   `${u.km.toFixed(1)} km`,
@@ -712,10 +986,10 @@ export class ExecutiveReportService {
                 ],
               ]
             : [['Sem viagens confirmadas no período', '-', '-', '-', '-', '-', '-']],
-        styles: { fontSize: 7.4, cellPadding: 1.8 },
+        styles: { fontSize: 7.3, cellPadding: 1.8 },
         headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
         didParseCell: (data) => {
-          if (unitCosts.length > 0 && data.row.index === Math.min(unitCosts.length, 8)) {
+          if (unitCosts.length > 0 && data.row.index === unitCosts.length) {
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.fillColor = [236, 253, 245];
             data.cell.styles.textColor = [6, 95, 70];
@@ -723,28 +997,32 @@ export class ExecutiveReportService {
         },
       });
 
-      const afterCostY = ((doc as any).lastAutoTable?.finalY || 90) + 7;
+      let afterCostY = ((doc as any).lastAutoTable?.finalY || 110) + 7;
+      if (afterCostY > pageH - 85) {
+        doc.addPage();
+        drawPageHeader('4. Franquia Contratada (>= 75%), Rotas & Auditoria de KM');
+        afterCostY = 35;
+      }
 
-      // Tabela 2: Franquia Mensal dos Veículos da Contratada
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
       doc.text(
-        `Franquia de KM — Veículos da Contratada (Limiar de Alerta: ${quotaSettings.alertThresholdPercent}%)`,
+        `Franquia Mensal — Veículos da Contratada (Alerta automático em >= ${quotaSettings.alertThresholdPercent}%)`,
         marginX,
         afterCostY
       );
 
       autoTable(doc, {
         startY: afterCostY + 2,
-        margin: { left: marginX, right: marginX },
-        head: [['Placa', 'Tipo / Modelo', 'Contratada', 'Viagens', 'KM Rodado', 'Franquia', 'Utilização', 'Situação']],
+        margin: { left: marginX, right: marginX, bottom: 16 },
+        head: [['Placa', 'Tipo', 'Contratada', 'Viag.', 'KM Rodado', 'Franquia', 'Uso', 'Situação']],
         body:
           contractedVehicleStats.length > 0
-            ? contractedVehicleStats.slice(0, 8).map((s) => [
+            ? contractedVehicleStats.slice(0, 12).map((s) => [
                 s.vehicle.plate,
                 s.vehicle.type,
-                s.contractorName.slice(0, 34),
+                s.contractorName.slice(0, 26),
                 String(s.trips),
                 `${s.usedKm} km`,
                 `${s.quotaKm} km`,
@@ -752,11 +1030,11 @@ export class ExecutiveReportService {
                 s.percent >= 100
                   ? 'EXCEDIDO'
                   : s.percent >= quotaSettings.alertThresholdPercent
-                  ? `ALERTA (>=${quotaSettings.alertThresholdPercent}%)`
+                  ? `ALERTA >=${quotaSettings.alertThresholdPercent}%`
                   : 'Normal',
               ])
             : [['Nenhum veículo contratado com rodagem registrada no período', '-', '-', '-', '-', '-', '-', '-']],
-        styles: { fontSize: 7.3, cellPadding: 1.7 },
+        styles: { fontSize: 7.1, cellPadding: 1.7 },
         headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold' },
         didParseCell: (data) => {
           if (data.section === 'body' && data.column.index === 7) {
@@ -772,126 +1050,166 @@ export class ExecutiveReportService {
         },
       });
 
-      const afterQuotaY = ((doc as any).lastAutoTable?.finalY || 145) + 6;
-      if (afterQuotaY < pageH - 28) {
-        // Resumo rápido: Top Rotas (Esq) + Auditoria KM Real (Dir)
-        const boxH = Math.min(34, pageH - afterQuotaY - 12);
-        const halfW = (contentW - 5) / 2;
+      let afterQuotaY = ((doc as any).lastAutoTable?.finalY || 180) + 7;
+      if (afterQuotaY > pageH - 58) {
+        doc.addPage();
+        drawPageHeader('4. Rotas Frequentes, Motoristas & Auditoria KM Previsto × Real');
+        afterQuotaY = 35;
+      }
 
-        doc.setFillColor(248, 250, 252);
-        doc.setDrawColor(203, 213, 225);
-        doc.roundedRect(marginX, afterQuotaY, halfW, boxH, 2, 2, 'FD');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(15, 23, 42);
-        doc.text('Top Rotas mais Frequentes', marginX + 3.5, afterQuotaY + 5.5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.2);
-        doc.setTextColor(51, 65, 85);
-        topRoutes.slice(0, 4).forEach((rt, idx) => {
+      // 2 Cards lado a lado: Top 5 Rotas (Esq) + Top 5 Motoristas (Dir)
+      const halfW = (contentW - 4) / 2;
+      const boxH = 38;
+
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(marginX, afterQuotaY, halfW, boxH, 2, 2, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Top 5 Rotas mais Frequentes', marginX + 3.5, afterQuotaY + 5.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.1);
+      doc.setTextColor(51, 65, 85);
+      if (topRoutes.length === 0) {
+        doc.text('Sem viagens confirmadas.', marginX + 3.5, afterQuotaY + 12);
+      } else {
+        topRoutes.forEach((rt, idx) => {
           doc.text(
-            `${idx + 1}. ${rt.route} — ${rt.count} viagem(ns) (${rt.km.toFixed(0)} km)`,
+            `${idx + 1}. ${rt.route.slice(0, 28)} — ${rt.count}x (${rt.km.toFixed(0)} km)`,
             marginX + 3.5,
-            afterQuotaY + 11 + idx * 5
+            afterQuotaY + 11.5 + idx * 5.2
           );
         });
+      }
 
-        const rx = marginX + halfW + 5;
-        doc.setFillColor(248, 250, 252);
-        doc.setDrawColor(203, 213, 225);
-        doc.roundedRect(rx, afterQuotaY, halfW, boxH, 2, 2, 'FD');
+      const rx = marginX + halfW + 4;
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(rx, afterQuotaY, halfW, boxH, 2, 2, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Top 5 Motoristas Escalados', rx + 3.5, afterQuotaY + 5.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.1);
+      doc.setTextColor(51, 65, 85);
+      if (topDrivers.length === 0) {
+        doc.text('Sem motoristas alocados.', rx + 3.5, afterQuotaY + 12);
+      } else {
+        topDrivers.forEach((dr, idx) => {
+          doc.text(
+            `${idx + 1}. ${dr.name.slice(0, 26)} — ${dr.count}x (${dr.km.toFixed(0)} km)`,
+            rx + 3.5,
+            afterQuotaY + 11.5 + idx * 5.2
+          );
+        });
+      }
+
+      // Faixa de Auditoria KM Previsto × Real
+      const auditBoxY = afterQuotaY + boxH + 4;
+      if (auditBoxY < pageH - 28) {
+        doc.setFillColor(245, 243, 255);
+        doc.setDrawColor(196, 181, 253);
+        doc.roundedRect(marginX, auditBoxY, contentW, 18, 2, 2, 'FD');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.setTextColor(15, 23, 42);
-        doc.text('Auditoria de Desvios (KM Previsto × KM Real)', rx + 3.5, afterQuotaY + 5.5);
+        doc.setTextColor(91, 33, 182);
+        doc.text('Auditoria de Desvios — KM Previsto × KM Real', marginX + 4, auditBoxY + 6);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.4);
-        doc.setTextColor(51, 65, 85);
-        doc.text(`Viagens com KM Real lançado: ${realKmTrips.length}`, rx + 3.5, afterQuotaY + 11.5);
+        doc.setFontSize(7.5);
+        doc.setTextColor(30, 41, 59);
         doc.text(
-          `KM Previsto: ${auditEstSum.toFixed(1)} km  |  KM Real: ${auditRealSum.toFixed(1)} km`,
-          rx + 3.5,
-          afterQuotaY + 17
-        );
-        doc.text(
-          `Variação Líquida: ${auditDiffKm > 0 ? '+' : ''}${auditDiffKm} km (${auditDiffPct > 0 ? '+' : ''}${auditDiffPct}%)  |  Desvios >= ±15%: ${highDeviationTrips.length}`,
-          rx + 3.5,
-          afterQuotaY + 22.5
+          `Viagens com KM Real: ${realKmTrips.length}  |  KM Previsto: ${auditEstSum.toFixed(1)} km  |  KM Real: ${auditRealSum.toFixed(1)} km  |  Variação: ${auditDiffKm > 0 ? '+' : ''}${auditDiffKm} km (${auditDiffPct > 0 ? '+' : ''}${auditDiffPct}%)  |  Desvios >= ±15%: ${highDeviationTrips.length}`,
+          marginX + 4,
+          auditBoxY + 13
         );
       }
     }
 
     // =========================================================================
-    // PÁGINA 4+: ANEXO OPERACIONAL — LISTAGEM COMPLETA DE PROCESSOS
+    // PÁGINA 5+ (A4 RETRATO): ANEXO OPERACIONAL — GRADE COMPLETA DE PROCESSOS
     // =========================================================================
     if (options.includeProcessTable) {
       ensureNewPage();
-      drawPageHeader(`4. Anexo Operacional — Grade Completa de Processos (${trips.length})`);
+      drawPageHeader(`5. Anexo Operacional — Grade Completa de Processos (${trips.length})`);
 
       const tableData = trips.map((t) => {
         const v = vehicles.find((item) => item.id === t.allocated_vehicle_id);
         const d = drivers.find((item) => item.id === t.allocated_driver_id);
         const saDate = safeFormatDate(t.departure_datetime, 'dd/MM HH:mm', '-');
         const kmLabel =
-          t.real_km && t.real_km > 0 ? `${t.real_km} km (R)` : `${t.estimated_km} km (P)`;
+          t.real_km && t.real_km > 0 ? `${t.real_km} (R)` : `${t.estimated_km} (P)`;
 
         return [
           t.process_number,
-          t.macro_unit,
-          t.requester_name.length > 20 ? `${t.requester_name.substring(0, 20)}...` : t.requester_name,
+          `${t.macro_unit}\n${(t.requesting_unit || '').slice(0, 14)}`,
+          t.requester_name.length > 16 ? `${t.requester_name.slice(0, 16)}...` : t.requester_name,
           `${getCityName(t.origin_city_id)} -> ${getCityName(t.destination_city_id)}`,
           saDate,
           `${t.passenger_count}`,
           kmLabel,
-          v ? `${v.plate} (${v.type})` : 'Pendente',
-          d ? `${d.name.split(' ')[0]} ${d.name.split(' ')[1] || ''}`.trim() : 'Pendente',
+          v ? `${v.plate}\n${d ? d.name.split(' ')[0] : ''}` : 'Pendente',
           t.status.replace(' ao Demandante', '').replace(' pela Unidade Executante', ' (Exec)'),
         ];
       });
 
       autoTable(doc, {
-        startY: 31,
+        startY: 33,
         head: [[
-          'Nº Processo',
-          'Unid.',
+          'Processo SEI',
+          'Unid./Setor',
           'Solicitante',
           'Trecho',
           'Saída',
           'Pax',
-          'KM (R/P)',
-          'Veículo',
-          'Motorista',
+          'KM',
+          'Placa/Mot.',
           'Situação',
         ]],
-        body: tableData.length > 0 ? tableData : [['Nenhum processo no período', '-', '-', '-', '-', '-', '-', '-', '-', '-']],
+        body:
+          tableData.length > 0
+            ? tableData
+            : [['Nenhum processo no período', '-', '-', '-', '-', '-', '-', '-', '-']],
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
-        styles: { fontSize: 7.1, cellPadding: 1.8 },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 6.8, fontStyle: 'bold' },
+        styles: { fontSize: 6.4, cellPadding: 1.4, overflow: 'linebreak' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
-        margin: { left: marginX, right: marginX, bottom: 14 },
+        margin: { left: marginX, right: marginX, bottom: 15 },
+        columnStyles: {
+          0: { cellWidth: 27 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 32 },
+          4: { cellWidth: 16 },
+          5: { cellWidth: 8, halign: 'center' },
+          6: { cellWidth: 14, halign: 'right' },
+          7: { cellWidth: 21 },
+          8: { cellWidth: 26 },
+        },
       });
     }
 
-    // Rodapé institucional em TODAS as páginas ("Página X de Y")
+    // Rodapé oficial em TODAS as páginas ("Página X de Y")
     const totalPages = doc.getNumberOfPages();
     const emittedAt = format(new Date(), 'dd/MM/yyyy HH:mm');
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-      doc.setDrawColor(226, 232, 240);
-      doc.line(marginX, pageH - 10, pageW - marginX, pageH - 10);
+      doc.setDrawColor(203, 213, 225);
+      doc.line(marginX, pageH - 11, pageW - marginX, pageH - 11);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.2);
+      doc.setFontSize(7);
       doc.setTextColor(100, 116, 139);
       doc.text(
-        `SIG-FROTA UNILAB • PROADI / DIVTRANS — Relatório Executivo de Gestão de Frotas | Emitido em ${emittedAt}`,
+        `SIG-FROTA UNILAB • PROADI / DIVTRANS — Relatório Executivo (A4) | Emitido em ${emittedAt}`,
         marginX,
-        pageH - 6
+        pageH - 6.5
       );
       doc.setFont('helvetica', 'bold');
-      doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 6, { align: 'right' });
+      doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 6.5, { align: 'right' });
     }
 
     const safePeriod = options.periodLabel.replace(/[^a-zA-Z0-9]/g, '_');
-    doc.save(`SIG-FROTA_Relatorio_Executivo_${safePeriod}.pdf`);
+    doc.save(`SIG-FROTA_Relatorio_Executivo_A4_${safePeriod}.pdf`);
   }
 }
