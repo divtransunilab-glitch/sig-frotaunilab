@@ -22,9 +22,11 @@ import {
   RotateCcw,
   Gauge,
   Pencil,
+  FileText,
 } from 'lucide-react';
 import { safeFormatDate } from '../../utils/dateUtils';
 import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
+import { TravelReportDocumentModal } from './TravelReportDocumentModal';
 
 interface TravelReportViewProps {
   trips: TripRequest[];
@@ -42,6 +44,7 @@ type ReportFilterType =
 export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTripUpdated }) => {
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [reportDocTrip, setReportDocTrip] = useState<TripRequest | null>(null);
   const [copiedTripId, setCopiedTripId] = useState<string | null>(null);
 
   // Filter State
@@ -616,6 +619,18 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                             </button>
                           )}
 
+                          {/* Botão Ver Relatório Completo (dados da viagem, passageiros, KM e observações) */}
+                          {(isFinalized || hasKmRecorded) && (
+                            <button
+                              onClick={() => setReportDocTrip(trip)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-navy-950 hover:bg-navy-900 text-white transition-colors flex items-center gap-1 shadow-xs"
+                              title="Visualizar, imprimir ou baixar PDF do relatório completo da viagem"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Ver Relatório</span>
+                            </button>
+                          )}
+
                           {/* Botão Lançar / Editar KM (permite editar KM e hodômetro lançados pelo motorista) */}
                           <button
                             onClick={() => handleOpenSubmitModal(trip)}
@@ -831,6 +846,13 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
           </div>
         </div>
       )}
+
+      {/* Modal de Visualização / Impressão / PDF do Relatório Consolidado de Viagem */}
+      <TravelReportDocumentModal
+        trip={reportDocTrip}
+        isOpen={Boolean(reportDocTrip)}
+        onClose={() => setReportDocTrip(null)}
+      />
     </div>
   );
 };
