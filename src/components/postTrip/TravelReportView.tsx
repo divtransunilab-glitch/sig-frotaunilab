@@ -23,10 +23,12 @@ import {
   Gauge,
   Pencil,
   FileText,
+  Truck,
 } from 'lucide-react';
 import { safeFormatDate } from '../../utils/dateUtils';
 import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
 import { TravelReportDocumentModal } from './TravelReportDocumentModal';
+import { TrafficControlTab } from './TrafficControlTab';
 
 interface TravelReportViewProps {
   trips: TripRequest[];
@@ -42,6 +44,7 @@ type ReportFilterType =
   | 'finalized';
 
 export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTripUpdated }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'km_reports' | 'traffic_control'>('km_reports');
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [reportDocTrip, setReportDocTrip] = useState<TripRequest | null>(null);
@@ -302,37 +305,73 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="w-5 h-5 text-brand-600" />
-            <h2 className="text-xl font-extrabold text-navy-950">
-              Relatórios de Viagem & Apuração de KM Real
-            </h2>
+      {/* Header + Seletor de Abas (Apuração de KM x Controle de Tráfego Mensal) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-4 sm:p-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-brand-600" />
+              <h2 className="text-xl font-extrabold text-navy-950">
+                Relatórios de Viagem & Controle de Tráfego
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Apuração de KM real por trecho, homologação de relatórios e controle mensal separado por veículo
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Fluxo de encerramento pós-viagem: lançamentos do motorista aparecem primeiro para revisão e homologação
-          </p>
+
+          {activeSubTab === 'km_reports' && driverSubmittedCount > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setStatusFilter((prev) => (prev === 'driver_submitted' ? 'all' : 'driver_submitted'))
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold border flex items-center gap-2 transition-all self-start md:self-auto ${
+                statusFilter === 'driver_submitted'
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-md'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>{driverSubmittedCount} KM lançado(s) pelo motorista</span>
+            </button>
+          )}
         </div>
 
-        {driverSubmittedCount > 0 && (
+        {/* Sub-abas do Menu de Relatórios */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
           <button
             type="button"
-            onClick={() =>
-              setStatusFilter((prev) => (prev === 'driver_submitted' ? 'all' : 'driver_submitted'))
-            }
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold border flex items-center gap-2 transition-all self-start md:self-auto ${
-              statusFilter === 'driver_submitted'
-                ? 'bg-emerald-600 text-white border-emerald-700 shadow-md'
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+            onClick={() => setActiveSubTab('km_reports')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all ${
+              activeSubTab === 'km_reports'
+                ? 'bg-navy-950 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <Smartphone className="w-4 h-4" />
-            <span>{driverSubmittedCount} KM lançado(s) pelo motorista</span>
+            <ClipboardCheck className="w-4 h-4" />
+            <span>Apuração de KM & Homologação</span>
           </button>
-        )}
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('traffic_control')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all ${
+              activeSubTab === 'traffic_control'
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>Controle de Tráfego Mensal (Por Veículo)</span>
+          </button>
+        </div>
       </div>
+
+      {activeSubTab === 'traffic_control' ? (
+        <TrafficControlTab trips={trips} />
+      ) : (
+        <>
 
       {/* KPI Status Cards (clicáveis como filtro rápido) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -853,6 +892,8 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
         isOpen={Boolean(reportDocTrip)}
         onClose={() => setReportDocTrip(null)}
       />
+        </>
+      )}
     </div>
   );
 };

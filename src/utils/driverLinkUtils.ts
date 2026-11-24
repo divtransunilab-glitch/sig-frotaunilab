@@ -1,3 +1,5 @@
+import { City, TripLeg, TripRequest } from '../types';
+
 export const DRIVER_QUERY_PARAM = 'motorista';
 
 /**
@@ -60,4 +62,73 @@ export function buildWhatsAppUrl(phone?: string, message?: string): string {
   const waNumber = digits.length >= 10 ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
   const query = message ? `?text=${encodeURIComponent(message)}` : '';
   return waNumber ? `https://wa.me/${waNumber}${query}` : `https://wa.me/${query}`;
+}
+
+/**
+ * Monta os trechos padrão de uma viagem (Ida -> Paradas -> Destino -> Retorno à Origem).
+ * Ex.: Redenção -> Fortaleza gera:
+ *   1) Redenção ➔ Fortaleza
+ *   2) Fortaleza ➔ Redenção
+ */
+export function buildDefaultTripLegs(trip: TripRequest, cities: City[]): TripLeg[] {
+  if (Array.isArray(trip.trip_legs) && trip.trip_legs.length > 0) {
+    return trip.trip_legs;
+  }
+
+  const getCityLabel = (id: string) => {
+    const found = cities.find((c) => c.id === id);
+    return found ? found.name : id;
+  };
+
+  const originName = getCityLabel(trip.origin_city_id);
+  const destName = getCityLabel(trip.destination_city_id);
+  const intermediates = (trip.intermediate_cities || [])
+    .map((id) => getCityLabel(id))
+    .filter((name) => Boolean(name) && name !== originName && name !== destName);
+
+  const stops = [originName, ...intermediates, destName];
+  const legs: TripLeg[] = [];
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    legs.push({
+      id: `leg-${i + 1}`,
+      origin: stops[i],
+      destination: stops[i + 1],
+      odometer_start: i === 0 ? trip.odometer_start : undefined,
+    });
+  }
+
+  // Trecho de retorno (Destino -> Origem), quando origem != destino
+  if (originName !== destName) {
+    legs.push({
+      id: `leg-${legs.length + 1}`,
+      origin: destName,
+      destination: originName,
+      odometer_end: trip.odometer_end,
+    });
+  }
+
+  return legs;
+}
+
+/**
+ * Formata resumo textual dos trechos de KM (para exibição em relatórios e fallback).
+ */
+export function formatTripLegsSummary(legs?: TripLeg[]): string {
+  if (!Array.isArray(legs) || legs.length === 0) return '';
+  return legs
+    .map((leg) => {
+      const kmPart =
+        leg.distance_km !== undefined && leg.distance_km !== null
+          ? `${leg.distance_km} km`
+          : leg.odometer_start !== undefined && leg.odometer_end !== undefined
+          ? `${Number((leg.odometer_end - leg.odometer_start).toFixed(1))} km`
+          : '-';
+      const odoPart =
+        leg.odometer_start !== undefined && leg.odometer_end !== undefined
+          ? ` (${leg.odometer_start} → ${leg.odometer_end})`
+          : '';
+      return `${leg.origin} ➔ ${leg.destination}: ${kmPart}${odoPart}`;
+    })
+    .join(' | ');
 }

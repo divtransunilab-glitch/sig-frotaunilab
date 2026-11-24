@@ -1,5 +1,6 @@
 import { 
   TripRequest, 
+  TripLeg,
   FilterOptions, 
   TripStatus, 
   StatusDeadline, 
@@ -73,6 +74,7 @@ export class TripService {
       base.driver_checkout_at = trip.driver_checkout_at || null;
       base.odometer_start = trip.odometer_start ?? null;
       base.odometer_end = trip.odometer_end ?? null;
+      base.trip_legs = trip.trip_legs && trip.trip_legs.length > 0 ? trip.trip_legs : null;
     }
 
     return base;
@@ -336,6 +338,7 @@ export class TripService {
             msg.includes('extra_km') ||
             msg.includes('driver_checkin_at') ||
             msg.includes('odometer_start') ||
+            msg.includes('trip_legs') ||
             res.error.code === 'PGRST204'
           ) {
             res = await supabase.from('trip_requests').upsert(basePayload);
@@ -552,6 +555,7 @@ export class TripService {
       real_km: number;
       odometer_start?: number;
       odometer_end?: number;
+      trip_legs?: TripLeg[];
       fuel_liters?: number;
       toll_amount?: number;
       report_notes?: string;
@@ -567,6 +571,7 @@ export class TripService {
       real_km: data.real_km,
       ...(data.odometer_start !== undefined ? { odometer_start: data.odometer_start } : {}),
       ...(data.odometer_end !== undefined ? { odometer_end: data.odometer_end } : {}),
+      ...(data.trip_legs !== undefined ? { trip_legs: data.trip_legs } : {}),
       fuel_liters: data.fuel_liters,
       toll_amount: data.toll_amount,
       report_notes: data.report_notes,
@@ -614,6 +619,10 @@ export class TripService {
             fetched.passenger_list && fetched.passenger_list.length > 0
               ? fetched.passenger_list
               : existing?.passenger_list,
+          trip_legs:
+            Array.isArray(fetched.trip_legs) && fetched.trip_legs.length > 0
+              ? fetched.trip_legs
+              : existing?.trip_legs,
         };
         if (existingIdx !== -1) {
           local[existingIdx] = merged;
@@ -639,21 +648,39 @@ export class TripService {
       odometer_start: number;
       checkin_at?: string;
       notes?: string;
+      trip_legs?: TripLeg[];
     }
   ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
     const timestamp = data.checkin_at || new Date().toISOString();
 
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('driver_update_trip_execution', {
+      let rpcRes = await supabase.rpc('driver_update_trip_execution', {
         p_trip_id: tripId,
         p_action: 'checkin',
         p_odometer_start: data.odometer_start,
         p_report_notes: data.notes || null,
         p_event_timestamp: timestamp,
+        p_trip_legs: data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : null,
       });
 
-      if (!rpcError && rpcData) {
-        const updated = rpcData as TripRequest;
+      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC (sem p_trip_legs)
+      if (rpcRes.error && String(rpcRes.error.message || '').includes('p_trip_legs')) {
+        rpcRes = await supabase.rpc('driver_update_trip_execution', {
+          p_trip_id: tripId,
+          p_action: 'checkin',
+          p_odometer_start: data.odometer_start,
+          p_report_notes: data.notes || null,
+          p_event_timestamp: timestamp,
+        });
+      }
+
+      if (!rpcRes.error && rpcRes.data) {
+        const updated: TripRequest = {
+          ...(rpcRes.data as TripRequest),
+          trip_legs:
+            (rpcRes.data as TripRequest).trip_legs ||
+            (data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : undefined),
+        };
         const local = this.loadTrips();
         const idx = local.findIndex((t) => t.id === updated.id);
         if (idx !== -1) local[idx] = { ...local[idx], ...updated };
@@ -662,8 +689,8 @@ export class TripService {
         return { trip: updated, syncedToCloud: true };
       }
 
-      if (rpcError) {
-        console.warn('RPC driver_update_trip_execution indisponível ou recusada:', rpcError.message);
+      if (rpcRes.error) {
+        console.warn('RPC driver_update_trip_execution indisponível ou recusada:', rpcRes.error.message);
       }
     } catch (err) {
       console.warn('Erro ao chamar RPC de check-in do motorista:', err);
@@ -683,6 +710,7 @@ export class TripService {
       id: tripId,
       driver_checkin_at: timestamp,
       odometer_start: data.odometer_start,
+      trip_legs: data.trip_legs,
       report_notes: data.notes ? data.notes : existing.report_notes,
     });
 
@@ -695,7 +723,7 @@ export class TripService {
   }
 
   /**
-   * Registro de Check-out (Retorno + Relatório Pós-Viagem) pelo Motorista via Mobile
+   * Registro de Check-out (Retorno + Relatório Pós-Viagem por Trecho) pelo Motorista via Mobile
    */
   static async submitDriverCheckOut(
     tripId: string,
@@ -707,12 +735,13 @@ export class TripService {
       fuel_liters?: number;
       toll_amount?: number;
       report_notes?: string;
+      trip_legs?: TripLeg[];
     }
   ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
     const timestamp = data.checkout_at || new Date().toISOString();
 
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('driver_update_trip_execution', {
+      let rpcRes = await supabase.rpc('driver_update_trip_execution', {
         p_trip_id: tripId,
         p_action: 'checkout',
         p_odometer_start: data.odometer_start ?? null,
@@ -722,10 +751,31 @@ export class TripService {
         p_toll_amount: data.toll_amount ?? null,
         p_report_notes: data.report_notes || null,
         p_event_timestamp: timestamp,
+        p_trip_legs: data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : null,
       });
 
-      if (!rpcError && rpcData) {
-        const updated = rpcData as TripRequest;
+      // Fallback caso o banco ainda esteja com a assinatura anterior da RPC (sem p_trip_legs)
+      if (rpcRes.error && String(rpcRes.error.message || '').includes('p_trip_legs')) {
+        rpcRes = await supabase.rpc('driver_update_trip_execution', {
+          p_trip_id: tripId,
+          p_action: 'checkout',
+          p_odometer_start: data.odometer_start ?? null,
+          p_odometer_end: data.odometer_end,
+          p_real_km: data.real_km,
+          p_fuel_liters: data.fuel_liters ?? null,
+          p_toll_amount: data.toll_amount ?? null,
+          p_report_notes: data.report_notes || null,
+          p_event_timestamp: timestamp,
+        });
+      }
+
+      if (!rpcRes.error && rpcRes.data) {
+        const updated: TripRequest = {
+          ...(rpcRes.data as TripRequest),
+          trip_legs:
+            (rpcRes.data as TripRequest).trip_legs ||
+            (data.trip_legs && data.trip_legs.length > 0 ? data.trip_legs : undefined),
+        };
         const local = this.loadTrips();
         const idx = local.findIndex((t) => t.id === updated.id);
         if (idx !== -1) local[idx] = { ...local[idx], ...updated };
@@ -735,8 +785,8 @@ export class TripService {
         return { trip: updated, syncedToCloud: true };
       }
 
-      if (rpcError) {
-        console.warn('RPC driver_update_trip_execution (checkout) falhou:', rpcError.message);
+      if (rpcRes.error) {
+        console.warn('RPC driver_update_trip_execution (checkout) falhou:', rpcRes.error.message);
       }
     } catch (err) {
       console.warn('Erro ao chamar RPC de check-out do motorista:', err);
@@ -758,6 +808,7 @@ export class TripService {
       driver_checkout_at: timestamp,
       odometer_start: data.odometer_start ?? existing.odometer_start,
       odometer_end: data.odometer_end,
+      trip_legs: data.trip_legs,
       real_km: data.real_km,
       fuel_liters: data.fuel_liters,
       toll_amount: data.toll_amount,

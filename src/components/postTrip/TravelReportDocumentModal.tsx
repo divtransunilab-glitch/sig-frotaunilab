@@ -223,6 +223,29 @@ export const TravelReportDocumentModal: React.FC<TravelReportDocumentModalProps>
             <td style="padding: 5px 8px; width: 34%;"><span style="color: #64748b; font-weight: 600;">Homologado em:</span> <strong style="color: #047857;">${approvedAt}</strong></td>
           </tr>
         </table>
+        ${
+          Array.isArray(trip.trip_legs) && trip.trip_legs.length > 0
+            ? `<div style="border-top: 1px solid #cbd5e1; background-color: #ffffff; padding: 6px 8px;">
+                <div style="font-size: 9px; font-weight: 800; color: #475569; text-transform: uppercase; margin-bottom: 4px;">Detalhamento de KM por Trecho:</div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 9.5px;">
+                  ${trip.trip_legs
+                    .map(
+                      (leg, idx) => `
+                    <tr style="border-bottom: 1px dotted #e2e8f0;">
+                      <td style="padding: 2.5px 4px; font-weight: 700; color: #0f172a;">${idx + 1}. ${escapeHtml(leg.origin)} ➔ ${escapeHtml(leg.destination)}</td>
+                      <td style="padding: 2.5px 4px; color: #475569; text-align: center;">${
+                        leg.odometer_start !== undefined && leg.odometer_end !== undefined
+                          ? `Hodômetro: ${leg.odometer_start} → ${leg.odometer_end}`
+                          : ''
+                      }</td>
+                      <td style="padding: 2.5px 4px; text-align: right; font-weight: 800; color: #047857;">${leg.distance_km ?? '-'} km</td>
+                    </tr>`
+                    )
+                    .join('')}
+                </table>
+              </div>`
+            : ''
+        }
       </div>
 
       <!-- 4. Relação de Passageiros -->

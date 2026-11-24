@@ -115,6 +115,18 @@ export interface Driver {
   is_active: boolean;
 }
 
+export interface TripLeg {
+  id: string;
+  origin: string;
+  destination: string;
+  odometer_start?: number;
+  odometer_end?: number;
+  distance_km?: number;
+  started_at?: string;
+  finished_at?: string;
+  notes?: string;
+}
+
 export interface TripRequest {
   id: string;
   process_number: string;
@@ -157,6 +169,7 @@ export interface TripRequest {
   driver_checkout_at?: string; // Horário real de retorno registrado pelo motorista no celular
   odometer_start?: number; // Hodômetro na saída
   odometer_end?: number; // Hodômetro no retorno
+  trip_legs?: TripLeg[]; // Detalhamento de KM por trecho (Ida, Paradas, Retorno)
   notes?: string;
   created_at: string;
   updated_at: string;
