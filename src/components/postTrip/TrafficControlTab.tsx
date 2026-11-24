@@ -583,7 +583,7 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
 
                 <div className="flex items-center gap-3 text-xs">
                   <span className="px-2.5 py-1 rounded-lg bg-white/10 font-bold">
-                    {group.trips.length} viagem{group.trips.length > 1 ? 'ns' : ''}
+                    {group.trips.length === 1 ? '1 viagem' : `${group.trips.length} viagens`}
                   </span>
                   <span className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-extrabold">
                     Total: {group.totalKm.toLocaleString('pt-BR')} km

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { TripRequest } from '../../types';
+import { TripRequest, TripLeg } from '../../types';
 import { TripService } from '../../services/tripService';
 import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
@@ -24,9 +24,12 @@ import {
   Pencil,
   FileText,
   Truck,
+  Plus,
+  Trash2,
+  Route,
 } from 'lucide-react';
 import { safeFormatDate } from '../../utils/dateUtils';
-import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
+import { buildDefaultTripLegs, buildDriverOrderUrl } from '../../utils/driverLinkUtils';
 import { TravelReportDocumentModal } from './TravelReportDocumentModal';
 import { TrafficControlTab } from './TrafficControlTab';
 
@@ -56,10 +59,11 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
   const [driverFilter, setDriverFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
 
-  // Form State (Lançar / Editar KM)
+  // Form State (Lançar / Editar KM e Trechos)
   const [odometerStart, setOdometerStart] = useState<string>('');
   const [odometerEnd, setOdometerEnd] = useState<string>('');
   const [realKm, setRealKm] = useState<string>('');
+  const [editableLegs, setEditableLegs] = useState<TripLeg[]>([]);
   const [fuelLiters, setFuelLiters] = useState<string>('');
   const [tollAmount, setTollAmount] = useState<string>('');
   const [reportNotes, setReportNotes] = useState<string>('');
@@ -114,11 +118,91 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
         ? String(trip.real_km)
         : String(trip.estimated_km)
     );
+    setEditableLegs(buildDefaultTripLegs(trip, cities).map((l) => ({ ...l })));
     setFuelLiters(trip.fuel_liters?.toString() || '');
     setTollAmount(trip.toll_amount?.toString() || '');
     setReportNotes(trip.report_notes || '');
     setFormError('');
     setIsSubmitModalOpen(true);
+  };
+
+  const syncSummaryFromLegs = (legs: TripLeg[]) => {
+    const firstStart = legs.find((l) => l.odometer_start !== undefined)?.odometer_start;
+    const lastEnd = [...legs].reverse().find((l) => l.odometer_end !== undefined)?.odometer_end;
+
+    if (firstStart !== undefined) setOdometerStart(String(firstStart));
+    if (lastEnd !== undefined) setOdometerEnd(String(lastEnd));
+
+    const sumLegs = legs.reduce((acc, l) => {
+      if (l.odometer_start !== undefined && l.odometer_end !== undefined && l.odometer_end >= l.odometer_start) {
+        return acc + (l.odometer_end - l.odometer_start);
+      }
+      if (l.distance_km !== undefined && l.distance_km > 0) {
+        return acc + l.distance_km;
+      }
+      return acc;
+    }, 0);
+
+    if (sumLegs > 0) {
+      setRealKm(String(Number(sumLegs.toFixed(1))));
+    }
+  };
+
+  const handleUpdateEditableLeg = (index: number, patch: Partial<TripLeg>) => {
+    setFormError('');
+    setEditableLegs((prev) => {
+      const next = prev.map((leg, i) => (i === index ? { ...leg, ...patch } : leg));
+      const updated = next[index];
+
+      if (
+        updated.odometer_start !== undefined &&
+        updated.odometer_end !== undefined &&
+        updated.odometer_end >= updated.odometer_start &&
+        patch.distance_km === undefined
+      ) {
+        updated.distance_km = Number((updated.odometer_end - updated.odometer_start).toFixed(1));
+      }
+
+      // Encadeia automaticamente o KM de chegada deste trecho no KM de saída do próximo trecho
+      if (patch.odometer_end !== undefined && index + 1 < next.length) {
+        const nextLeg = next[index + 1];
+        if (nextLeg.odometer_start === undefined || nextLeg.odometer_start === prev[index]?.odometer_end) {
+          next[index + 1] = {
+            ...nextLeg,
+            odometer_start: patch.odometer_end,
+            ...(nextLeg.odometer_end !== undefined && nextLeg.odometer_end >= patch.odometer_end
+              ? { distance_km: Number((nextLeg.odometer_end - patch.odometer_end).toFixed(1)) }
+              : {}),
+          };
+        }
+      }
+
+      syncSummaryFromLegs(next);
+      return next;
+    });
+  };
+
+  const handleAddEditableLeg = () => {
+    setEditableLegs((prev) => {
+      const last = prev[prev.length - 1];
+      return [
+        ...prev,
+        {
+          id: `leg-${Date.now()}`,
+          origin: last?.destination || '',
+          destination: '',
+          odometer_start: last?.odometer_end,
+        },
+      ];
+    });
+  };
+
+  const handleRemoveEditableLeg = (index: number) => {
+    setEditableLegs((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      syncSummaryFromLegs(next);
+      return next;
+    });
   };
 
   const handleOdometerChange = (nextStart: string, nextEnd: string) => {
@@ -131,11 +215,46 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
     if (!isNaN(s) && !isNaN(e) && e >= s) {
       setRealKm(String(Number((e - s).toFixed(1))));
     }
+
+    // Mantém o 1º e último trecho sincronizados se o gestor ajustar o hodômetro geral diretamente
+    setEditableLegs((prev) => {
+      if (prev.length === 0) return prev;
+      const next = prev.map((l) => ({ ...l }));
+      if (!isNaN(s)) {
+        next[0].odometer_start = s;
+        if (next[0].odometer_end !== undefined && next[0].odometer_end >= s) {
+          next[0].distance_km = Number((next[0].odometer_end - s).toFixed(1));
+        }
+      }
+      if (!isNaN(e)) {
+        const lastIdx = next.length - 1;
+        next[lastIdx].odometer_end = e;
+        if (next[lastIdx].odometer_start !== undefined && e >= next[lastIdx].odometer_start) {
+          next[lastIdx].distance_km = Number((e - next[lastIdx].odometer_start).toFixed(1));
+        }
+      }
+      return next;
+    });
   };
 
   const handleSubmitReport = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTrip) return;
+
+    // Validação por trecho
+    for (let i = 0; i < editableLegs.length; i++) {
+      const leg = editableLegs[i];
+      if (
+        leg.odometer_start !== undefined &&
+        leg.odometer_end !== undefined &&
+        leg.odometer_end < leg.odometer_start
+      ) {
+        setFormError(
+          `No Trecho ${i + 1} (${leg.origin} ➔ ${leg.destination}), o KM Chegada não pode ser menor que o KM Saída.`
+        );
+        return;
+      }
+    }
 
     const startVal = odometerStart.trim() !== '' ? parseFloat(odometerStart) : undefined;
     const endVal = odometerEnd.trim() !== '' ? parseFloat(odometerEnd) : undefined;
@@ -151,10 +270,33 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
       return;
     }
 
+    const hasAnyLegData = editableLegs.some(
+      (l) =>
+        (l.distance_km !== undefined && l.distance_km > 0) ||
+        l.odometer_start !== undefined ||
+        l.odometer_end !== undefined
+    );
+
+    const finalizedLegs: TripLeg[] | undefined = hasAnyLegData
+      ? editableLegs.map((leg) => {
+          let dist = leg.distance_km;
+          if (
+            leg.odometer_start !== undefined &&
+            leg.odometer_end !== undefined &&
+            leg.odometer_end >= leg.odometer_start &&
+            (dist === undefined || dist === null)
+          ) {
+            dist = Number((leg.odometer_end - leg.odometer_start).toFixed(1));
+          }
+          return { ...leg, distance_km: dist };
+        })
+      : undefined;
+
     TripService.submitTravelReport(selectedTrip.id, {
       real_km: parsedRealKm,
       odometer_start: startVal,
       odometer_end: endVal,
+      trip_legs: finalizedLegs,
       fuel_liters: fuelLiters ? parseFloat(fuelLiters) : undefined,
       toll_amount: tollAmount ? parseFloat(tollAmount) : undefined,
       report_notes: reportNotes,
@@ -709,10 +851,10 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
         </div>
       </div>
 
-      {/* Modal Lançamento / Edição do Relatório e KM do Motorista */}
+      {/* Modal Lançamento / Edição do Relatório e KM por Trecho */}
       {isSubmitModalOpen && selectedTrip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-lg overflow-hidden p-6 space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div>
                 <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">
@@ -765,12 +907,126 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                 </div>
               )}
 
-              {/* Hodômetro Inicial e Final (editáveis — recalcula KM Real automaticamente) */}
+              {/* Edição de KM por Trecho (sincroniza automaticamente com Controle de Tráfego e KM Total) */}
+              <div className="space-y-2.5 bg-slate-50/70 border border-slate-200 rounded-2xl p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="font-extrabold text-slate-700 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Route className="w-3.5 h-3.5 text-brand-600" />
+                    <span>KM por Trecho (reflete no Controle de Tráfego)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddEditableLeg}
+                    className="text-[11px] font-bold text-brand-700 hover:text-brand-800 flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Adicionar trecho</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {editableLegs.map((leg, idx) => (
+                    <div
+                      key={leg.id || idx}
+                      className="bg-white rounded-xl border border-slate-200 p-2.5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="w-5 h-5 rounded-full bg-navy-950 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={leg.origin}
+                            onChange={(e) => handleUpdateEditableLeg(idx, { origin: e.target.value })}
+                            placeholder="Origem"
+                            className="w-full max-w-[140px] px-2 py-1 text-[11px] font-bold rounded-lg border border-slate-200 bg-slate-50"
+                          />
+                          <span className="text-slate-400 font-bold">➔</span>
+                          <input
+                            type="text"
+                            value={leg.destination}
+                            onChange={(e) => handleUpdateEditableLeg(idx, { destination: e.target.value })}
+                            placeholder="Destino"
+                            className="w-full max-w-[140px] px-2 py-1 text-[11px] font-bold rounded-lg border border-slate-200 bg-slate-50"
+                          />
+                        </div>
+                        {editableLegs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditableLeg(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600"
+                            title="Remover trecho"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <span className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                            Hodômetro Saída
+                          </span>
+                          <input
+                            type="number"
+                            step={0.1}
+                            value={leg.odometer_start ?? ''}
+                            onChange={(e) =>
+                              handleUpdateEditableLeg(idx, {
+                                odometer_start: e.target.value !== '' ? parseFloat(e.target.value) : undefined,
+                              })
+                            }
+                            placeholder="Ex: 48250"
+                            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 font-bold text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                            Hodômetro Chegada
+                          </span>
+                          <input
+                            type="number"
+                            step={0.1}
+                            value={leg.odometer_end ?? ''}
+                            onChange={(e) =>
+                              handleUpdateEditableLeg(idx, {
+                                odometer_end: e.target.value !== '' ? parseFloat(e.target.value) : undefined,
+                              })
+                            }
+                            placeholder="Ex: 48315"
+                            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 font-bold text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-[10px] font-semibold text-emerald-700 mb-0.5">
+                            KM do Trecho
+                          </span>
+                          <input
+                            type="number"
+                            step={0.1}
+                            value={leg.distance_km ?? ''}
+                            onChange={(e) =>
+                              handleUpdateEditableLeg(idx, {
+                                distance_km: e.target.value !== '' ? parseFloat(e.target.value) : undefined,
+                              })
+                            }
+                            placeholder="Auto"
+                            className="w-full rounded-lg border border-emerald-300 bg-emerald-50/50 px-2 py-1.5 font-extrabold text-emerald-900"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hodômetro Geral Inicial e Final (editáveis — recalcula KM Real automaticamente) */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
                     <Gauge className="w-3.5 h-3.5 text-sky-600" />
-                    KM Inicial (Hodômetro)
+                    KM Inicial Geral (Hodômetro)
                   </label>
                   <input
                     type="number"
