@@ -241,14 +241,53 @@ export class ExecutiveReportService {
       .sort((a, b) => b.total - a.total || b.km - a.km)
       .slice(0, 8);
 
-    // Heatmap Dia da Semana (Seg=0..Dom=6) × Faixa de Horário (0: 00-06, 1: 06-12, 2: 12-18, 3: 18-24)
+    // 3 Modos de Heatmap idênticos ao BI (Horas 05h-22h, Faixas Operacionais, Turnos)
     const dayLabels = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-    const slotLabels = ['Madrugada (00h–06h)', 'Manhã (06h–12h)', 'Tarde (12h–18h)', 'Noite (18h–24h)'];
-    const heatmap: number[][] = Array.from({ length: 7 }, () => [0, 0, 0, 0]);
-    const slotTotals = [0, 0, 0, 0];
+    const individualHours = Array.from({ length: 18 }, (_, i) => i + 5); // 5..22
+    const timeSlotLabels = [
+      '00-05h',
+      '05-07h',
+      '07-09h',
+      '09-11h',
+      '11-13h',
+      '13-15h',
+      '15-18h',
+      '18-24h',
+    ];
+    const shiftLabels = [
+      'Manhã (05h-12h)',
+      'Tarde (12h-18h)',
+      'Noite (18h-24h)',
+      'Madrugada (00h-05h)',
+    ];
+
+    const getTimeSlotIndex = (hour: number) => {
+      if (hour < 5) return 0;
+      if (hour < 7) return 1;
+      if (hour < 9) return 2;
+      if (hour < 11) return 3;
+      if (hour < 13) return 4;
+      if (hour < 15) return 5;
+      if (hour < 18) return 6;
+      return 7;
+    };
+
+    const getShiftIndex = (hour: number) => {
+      if (hour >= 5 && hour < 12) return 0;
+      if (hour >= 12 && hour < 18) return 1;
+      if (hour >= 18 && hour <= 23) return 2;
+      return 3;
+    };
+
+    const heatHours: number[][] = Array.from({ length: 7 }, () => Array(18).fill(0));
+    const heatSlots: number[][] = Array.from({ length: 7 }, () => Array(8).fill(0));
+    const heatShifts: number[][] = Array.from({ length: 7 }, () => Array(4).fill(0));
+
+    let maxHeatHour = 0;
+    let maxHeatSlot = 0;
     let maxHeatCell = 0;
     let peakDayIdx = 0;
-    let peakSlotIdx = 1;
+    let peakSlotIdx = 0;
 
     trips.forEach((t) => {
       try {
@@ -257,13 +296,23 @@ export class ExecutiveReportService {
         const jsDay = getDay(d);
         const dayIdx = jsDay === 0 ? 6 : jsDay - 1;
         const h = getHours(d);
-        const slotIdx = h < 6 ? 0 : h < 12 ? 1 : h < 18 ? 2 : 3;
-        heatmap[dayIdx][slotIdx] += 1;
-        slotTotals[slotIdx] += 1;
-        if (heatmap[dayIdx][slotIdx] > maxHeatCell) {
-          maxHeatCell = heatmap[dayIdx][slotIdx];
+
+        if (h >= 5 && h <= 22) {
+          const hIdx = h - 5;
+          heatHours[dayIdx][hIdx] += 1;
+          if (heatHours[dayIdx][hIdx] > maxHeatHour) maxHeatHour = heatHours[dayIdx][hIdx];
+        }
+
+        const slIdx = getTimeSlotIndex(h);
+        heatSlots[dayIdx][slIdx] += 1;
+        if (heatSlots[dayIdx][slIdx] > maxHeatSlot) maxHeatSlot = heatSlots[dayIdx][slIdx];
+
+        const shIdx = getShiftIndex(h);
+        heatShifts[dayIdx][shIdx] += 1;
+        if (heatShifts[dayIdx][shIdx] > maxHeatCell) {
+          maxHeatCell = heatShifts[dayIdx][shIdx];
           peakDayIdx = dayIdx;
-          peakSlotIdx = slotIdx;
+          peakSlotIdx = shIdx;
         }
       } catch {
         // ignore
@@ -547,7 +596,7 @@ export class ExecutiveReportService {
 
         if (maxHeatCell > 0) {
           insights.push(
-            `3. Pico Operacional (Gargalo de Frota): O maior volume de saídas ocorreu às ${dayLabels[peakDayIdx]}s no turno ${slotLabels[peakSlotIdx]} (${maxHeatCell} viagens). Recomenda-se priorizar o agrupamento em Carona Solidária nessa janela.`
+            `3. Pico Operacional (Gargalo de Frota): O maior volume de saídas ocorreu às ${dayLabels[peakDayIdx]}s no turno ${shiftLabels[peakSlotIdx]} (${maxHeatCell} viagens). Recomenda-se priorizar o agrupamento em Carona Solidária nessa janela.`
           );
         }
 
@@ -600,112 +649,204 @@ export class ExecutiveReportService {
     }
 
     // =========================================================================
-    // PÁGINA 2 (A4 RETRATO): HEATMAP OPERACIONAL + UNIDADES MACRO + FINALIDADES & INDEFERIMENTOS
+    // PÁGINA 2 (A4 RETRATO): OS 3 HEATMAPS OPERACIONAIS (HORAS, FAIXAS E TURNOS)
     // =========================================================================
     if (options.includeHeatmapAndRankings) {
       ensureNewPage();
-      drawPageHeader('2. Heatmap Operacional (Dia × Turno), Unidades Macro & Indeferimentos');
+      drawPageHeader('2. Heatmaps Operacionais de Saídas (Horas, Faixas Operacionais & Turnos)');
 
-      // BLOCO 1: HEATMAP VETORIAL COLORIDO (Largura total A4 Retrato)
-      const heatY = 34;
-      const heatH = 88;
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(marginX, heatY, contentW, heatH, 2.5, 2.5, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('Heatmap Operacional de Saídas (Dia da Semana × Faixa de Horário)', marginX + 4, heatY + 6.5);
-
-      // Legenda de calor
-      const legItems: Array<{ label: string; color: [number, number, number] }> = [
-        { label: 'Baixo', color: [186, 230, 253] },
-        { label: 'Médio', color: [250, 204, 21] },
-        { label: 'Alto', color: [249, 115, 22] },
-        { label: 'Pico', color: [225, 29, 72] },
-      ];
-      let lx = marginX + contentW - 64;
-      doc.setFontSize(6.5);
-      legItems.forEach((item) => {
-        doc.setFillColor(item.color[0], item.color[1], item.color[2]);
-        doc.rect(lx, heatY + 3.5, 3.2, 3.2, 'F');
-        doc.setTextColor(71, 85, 105);
-        doc.text(item.label, lx + 4.2, heatY + 6.2);
-        lx += 15.5;
-      });
-
-      const labelColW = 24;
-      const totalColW = 18;
-      const cellW = (contentW - 8 - labelColW - totalColW) / 4;
-      const cellH = 8.2;
-      const gridTop = heatY + 15.5;
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.2);
-      doc.setTextColor(71, 85, 105);
-      ['Madrugada (00-06h)', 'Manhã (06-12h)', 'Tarde (12-18h)', 'Noite (18-24h)'].forEach((sl, sIdx) => {
-        doc.text(sl, marginX + 4 + labelColW + sIdx * cellW + cellW / 2, gridTop - 2, { align: 'center' });
-      });
-      doc.text('Total', marginX + 4 + labelColW + 4 * cellW + totalColW / 2, gridTop - 2, { align: 'center' });
-
-      const getHeatColor = (val: number): [number, number, number] => {
-        if (val <= 0 || maxHeatCell <= 0) return [248, 250, 252];
-        const ratio = val / maxHeatCell;
-        if (ratio >= 0.8) return [225, 29, 72];
-        if (ratio >= 0.55) return [249, 115, 22];
-        if (ratio >= 0.3) return [250, 204, 21];
-        return [186, 230, 253];
+      const getHeatColor = (val: number, maxVal: number): [number, number, number] => {
+        if (val <= 0 || maxVal <= 0) return [248, 250, 252];
+        const ratio = val / maxVal;
+        if (ratio >= 0.8) return [225, 29, 72]; // Pico (Rose 600)
+        if (ratio >= 0.55) return [249, 115, 22]; // Alto (Orange 500)
+        if (ratio >= 0.3) return [250, 204, 21]; // Médio (Yellow 400)
+        return [186, 230, 253]; // Baixo (Sky 200)
       };
 
-      dayLabels.forEach((day, dIdx) => {
-        const cy = gridTop + dIdx * (cellH + 1);
+      // Helper genérico para desenhar qualquer matriz de Heatmap em A4 Retrato
+      const drawHeatmapBlock = (params: {
+        title: string;
+        y: number;
+        height: number;
+        colLabels: string[];
+        matrix: number[][];
+        maxVal: number;
+        labelColW: number;
+        totalColW: number;
+        headerFontSize: number;
+        cellFontSize: number;
+        showLegend?: boolean;
+      }) => {
+        const {
+          title,
+          y,
+          height,
+          colLabels,
+          matrix,
+          maxVal,
+          labelColW,
+          totalColW,
+          headerFontSize,
+          cellFontSize,
+          showLegend,
+        } = params;
+
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(203, 213, 225);
+        doc.roundedRect(marginX, y, contentW, height, 2.5, 2.5, 'FD');
+
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.6);
-        doc.setTextColor(51, 65, 85);
-        doc.text(day, marginX + 4, cy + 5.5);
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(title, marginX + 3.5, y + 5.8);
 
-        let rowTotal = 0;
-        for (let sIdx = 0; sIdx < 4; sIdx++) {
-          const val = heatmap[dIdx][sIdx];
-          rowTotal += val;
-          const cx = marginX + 4 + labelColW + sIdx * cellW;
-          const [r, g, b] = getHeatColor(val);
-          doc.setFillColor(r, g, b);
-          doc.setDrawColor(226, 232, 240);
-          doc.roundedRect(cx + 0.6, cy, cellW - 1.2, cellH, 1.2, 1.2, 'FD');
-
-          const isDarkBg = maxHeatCell > 0 && val / maxHeatCell >= 0.55;
-          doc.setTextColor(isDarkBg ? 255 : 15, isDarkBg ? 255 : 23, isDarkBg ? 255 : 42);
-          doc.setFont('helvetica', val > 0 ? 'bold' : 'normal');
-          doc.setFontSize(7.8);
-          doc.text(val > 0 ? String(val) : '-', cx + cellW / 2, cy + 5.5, { align: 'center' });
+        if (showLegend) {
+          const legItems: Array<{ label: string; color: [number, number, number] }> = [
+            { label: 'Baixo', color: [186, 230, 253] },
+            { label: 'Médio', color: [250, 204, 21] },
+            { label: 'Alto', color: [249, 115, 22] },
+            { label: 'Pico', color: [225, 29, 72] },
+          ];
+          let lx = marginX + contentW - 60;
+          doc.setFontSize(6.3);
+          legItems.forEach((item) => {
+            doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+            doc.rect(lx, y + 3, 3, 3, 'F');
+            doc.setTextColor(71, 85, 105);
+            doc.text(item.label, lx + 3.8, y + 5.5);
+            lx += 14.5;
+          });
         }
 
-        doc.setTextColor(15, 23, 42);
+        const innerW = contentW - 7 - labelColW - totalColW;
+        const cellW = innerW / colLabels.length;
+        const cellH = 7;
+        const gridTop = y + 13;
+
         doc.setFont('helvetica', 'bold');
-        doc.text(String(rowTotal), marginX + 4 + labelColW + 4 * cellW + totalColW / 2, cy + 5.5, {
+        doc.setFontSize(headerFontSize);
+        doc.setTextColor(71, 85, 105);
+        colLabels.forEach((col, cIdx) => {
+          doc.text(col, marginX + 3.5 + labelColW + cIdx * cellW + cellW / 2, gridTop - 1.8, {
+            align: 'center',
+          });
+        });
+        doc.text('Tot.', marginX + 3.5 + labelColW + colLabels.length * cellW + totalColW / 2, gridTop - 1.8, {
           align: 'center',
         });
+
+        const colTotals = Array(colLabels.length).fill(0);
+        let grandTotal = 0;
+
+        dayLabels.forEach((day, dIdx) => {
+          const cy = gridTop + dIdx * (cellH + 0.8);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.9);
+          doc.setTextColor(51, 65, 85);
+          doc.text(day.slice(0, 7), marginX + 3.5, cy + 4.8);
+
+          let rowTotal = 0;
+          for (let cIdx = 0; cIdx < colLabels.length; cIdx++) {
+            const val = matrix[dIdx][cIdx];
+            rowTotal += val;
+            colTotals[cIdx] += val;
+            grandTotal += val;
+
+            const cx = marginX + 3.5 + labelColW + cIdx * cellW;
+            const [r, g, b] = getHeatColor(val, maxVal);
+            doc.setFillColor(r, g, b);
+            doc.setDrawColor(226, 232, 240);
+            doc.roundedRect(cx + 0.35, cy, cellW - 0.7, cellH, 0.9, 0.9, 'FD');
+
+            const isDarkBg = maxVal > 0 && val / maxVal >= 0.55;
+            doc.setTextColor(isDarkBg ? 255 : 15, isDarkBg ? 255 : 23, isDarkBg ? 255 : 42);
+            doc.setFont('helvetica', val > 0 ? 'bold' : 'normal');
+            doc.setFontSize(cellFontSize);
+            doc.text(val > 0 ? String(val) : '-', cx + cellW / 2, cy + 4.8, { align: 'center' });
+          }
+
+          doc.setTextColor(15, 23, 42);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.9);
+          doc.text(
+            String(rowTotal),
+            marginX + 3.5 + labelColW + colLabels.length * cellW + totalColW / 2,
+            cy + 4.8,
+            { align: 'center' }
+          );
+        });
+
+        // Linha de totais por coluna
+        const totY = gridTop + 7 * (cellH + 0.8) + 3.5;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.4);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Total', marginX + 3.5, totY);
+        colTotals.forEach((ct, cIdx) => {
+          const cx = marginX + 3.5 + labelColW + cIdx * cellW;
+          doc.text(String(ct), cx + cellW / 2, totY, { align: 'center' });
+        });
+        doc.text(
+          String(grandTotal),
+          marginX + 3.5 + labelColW + colLabels.length * cellW + totalColW / 2,
+          totY,
+          { align: 'center' }
+        );
+      };
+
+      // 2.1 Heatmap por Horas Cheias (05h às 22h)
+      drawHeatmapBlock({
+        title: '2.1 Heatmap por Horas Individuais (05h às 22h)',
+        y: 33,
+        height: 76,
+        colLabels: individualHours.map((h) => `${h}h`),
+        matrix: heatHours,
+        maxVal: maxHeatHour,
+        labelColW: 16,
+        totalColW: 10,
+        headerFontSize: 5.8,
+        cellFontSize: 6.1,
+        showLegend: true,
       });
 
-      // Linha de totais por turno no rodapé do heatmap
-      const totY = gridTop + 7 * (cellH + 1) + 2;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.2);
-      doc.setTextColor(15, 23, 42);
-      doc.text('Total Turno', marginX + 4, totY + 2);
-      slotTotals.forEach((st, sIdx) => {
-        const cx = marginX + 4 + labelColW + sIdx * cellW;
-        doc.text(String(st), cx + cellW / 2, totY + 2, { align: 'center' });
-      });
-      doc.text(String(total), marginX + 4 + labelColW + 4 * cellW + totalColW / 2, totY + 2, {
-        align: 'center',
+      // 2.2 Heatmap por Faixas Operacionais (00-05h .. 18-24h)
+      drawHeatmapBlock({
+        title: '2.2 Heatmap por Faixas Operacionais de Saída',
+        y: 113,
+        height: 76,
+        colLabels: timeSlotLabels,
+        matrix: heatSlots,
+        maxVal: maxHeatSlot,
+        labelColW: 18,
+        totalColW: 12,
+        headerFontSize: 6.6,
+        cellFontSize: 7.2,
       });
 
-      // BLOCO 2: DEMANDA & ADERÊNCIA POR UNIDADE MACRO
-      const unitY = heatY + heatH + 5;
-      const unitH = 74;
+      // 2.3 Heatmap por Turnos Operacionais (Manhã, Tarde, Noite, Madrugada)
+      drawHeatmapBlock({
+        title: '2.3 Heatmap por Turnos Operacionais da UNILAB',
+        y: 193,
+        height: 76,
+        colLabels: shiftLabels,
+        matrix: heatShifts,
+        maxVal: maxHeatCell,
+        labelColW: 18,
+        totalColW: 12,
+        headerFontSize: 7,
+        cellFontSize: 7.6,
+      });
+
+      // =========================================================================
+      // PÁGINA 2B (A4 RETRATO): UNIDADES MACRO, FINALIDADE & INDEFERIMENTOS
+      // =========================================================================
+      doc.addPage();
+      drawPageHeader('2.4 Rankings Institucionais — Unidades Macro, Finalidades & Indeferimentos');
+
+      // BLOCO 1: DEMANDA & ADERÊNCIA POR UNIDADE MACRO
+      const unitY = 34;
+      const unitH = 98;
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);
       doc.roundedRect(marginX, unitY, contentW, unitH, 2.5, 2.5, 'FD');
@@ -713,37 +854,37 @@ export class ExecutiveReportService {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text('Demandas & Aderência ao Prazo por Unidade Macro (Top 8)', marginX + 4, unitY + 6.5);
+      doc.text('Demandas & Aderência ao Prazo por Unidade Macro', marginX + 4, unitY + 6.5);
 
-      const unitsToShow = topUnits.slice(0, 8);
+      const unitsToShow = topUnits.slice(0, 10);
       const maxUnitTotal = unitsToShow[0]?.total || 1;
       unitsToShow.forEach((u, idx) => {
-        const uy = unitY + 12.5 + idx * 7.5;
+        const uy = unitY + 13 + idx * 8.2;
         const pctDeadline = u.total > 0 ? Math.round((u.inDeadline / u.total) * 100) : 0;
-        const barMax = contentW - 58;
+        const barMax = contentW - 60;
         const bw = Math.max(2, (u.total / maxUnitTotal) * barMax);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
+        doc.setFontSize(7.6);
         doc.setTextColor(15, 23, 42);
-        doc.text(u.unit, marginX + 4, uy + 3.6);
+        doc.text(u.unit, marginX + 4, uy + 3.8);
 
         doc.setFillColor(241, 245, 249);
-        doc.roundedRect(marginX + 24, uy, barMax, 4.8, 1.2, 1.2, 'F');
+        doc.roundedRect(marginX + 24, uy, barMax, 5, 1.2, 1.2, 'F');
         doc.setFillColor(15, 118, 110);
-        doc.roundedRect(marginX + 24, uy, bw, 4.8, 1.2, 1.2, 'F');
+        doc.roundedRect(marginX + 24, uy, bw, 5, 1.2, 1.2, 'F');
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.2);
+        doc.setFontSize(7.3);
         doc.setTextColor(51, 65, 85);
-        doc.text(`${u.total} dem. (${pctDeadline}% no prazo)`, marginX + contentW - 4, uy + 3.6, {
+        doc.text(`${u.total} dem. (${pctDeadline}% no prazo)`, marginX + contentW - 4, uy + 3.8, {
           align: 'right',
         });
       });
 
-      // BLOCO 3: FINALIDADE INSTITUCIONAL (Esq) + MOTIVOS DE INDEFERIMENTO (Dir)
-      const botY = unitY + unitH + 5;
-      const botH = pageH - botY - 16; // ~75mm
+      // BLOCO 2: FINALIDADE INSTITUCIONAL (Esq) + MOTIVOS DE INDEFERIMENTO (Dir)
+      const botY = unitY + unitH + 6;
+      const botH = 120;
       const halfW = (contentW - 4) / 2;
 
       doc.setFillColor(255, 255, 255);
@@ -751,27 +892,27 @@ export class ExecutiveReportService {
       doc.roundedRect(marginX, botY, halfW, botH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.8);
       doc.setTextColor(15, 23, 42);
-      doc.text('Finalidade Institucional', marginX + 4, botY + 6.5);
+      doc.text('Finalidade Institucional', marginX + 4, botY + 7);
 
       const maxAct = activitiesSorted[0]?.[1] || 1;
-      activitiesSorted.slice(0, 6).forEach(([act, cnt], idx) => {
-        const ay = botY + 13 + idx * 9.5;
+      activitiesSorted.slice(0, 8).forEach(([act, cnt], idx) => {
+        const ay = botY + 15 + idx * 12;
         const pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
         const barMax = halfW - 10;
         const bw = Math.max(2, (cnt / maxAct) * barMax);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.2);
+        doc.setFontSize(7.5);
         doc.setTextColor(51, 65, 85);
         doc.text(act.slice(0, 26), marginX + 4, ay);
         doc.text(`${cnt} (${pct}%)`, marginX + halfW - 4, ay, { align: 'right' });
 
         doc.setFillColor(241, 245, 249);
-        doc.roundedRect(marginX + 4, ay + 1.5, barMax, 4, 1, 1, 'F');
+        doc.roundedRect(marginX + 4, ay + 1.8, barMax, 4.8, 1, 1, 'F');
         doc.setFillColor(37, 99, 235);
-        doc.roundedRect(marginX + 4, ay + 1.5, bw, 4, 1, 1, 'F');
+        doc.roundedRect(marginX + 4, ay + 1.8, bw, 4.8, 1, 1, 'F');
       });
 
       const rejX = marginX + halfW + 4;
@@ -780,33 +921,33 @@ export class ExecutiveReportService {
       doc.roundedRect(rejX, botY, halfW, botH, 2.5, 2.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.8);
       doc.setTextColor(15, 23, 42);
-      doc.text(`Motivos de Indeferimento (${rejectedTrips.length})`, rejX + 4, botY + 6.5);
+      doc.text(`Motivos de Indeferimento (${rejectedTrips.length})`, rejX + 4, botY + 7);
 
       if (rejectionsSorted.length === 0) {
         doc.setFont('helvetica', 'italic');
-        doc.setFontSize(8);
+        doc.setFontSize(8.2);
         doc.setTextColor(5, 150, 105);
-        doc.text('Nenhum indeferimento registrado neste período.', rejX + 4, botY + 18);
+        doc.text('Nenhum indeferimento registrado neste período.', rejX + 4, botY + 20);
       } else {
         const maxRej = rejectionsSorted[0][1] || 1;
-        rejectionsSorted.slice(0, 5).forEach(([reason, cnt], idx) => {
-          const ry = botY + 13 + idx * 10.5;
+        rejectionsSorted.slice(0, 7).forEach(([reason, cnt], idx) => {
+          const ry = botY + 15 + idx * 13;
           const pct = Math.round((cnt / rejectedTrips.length) * 100);
           const barMax = halfW - 10;
           const bw = Math.max(2, (cnt / maxRej) * barMax);
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7);
+          doc.setFontSize(7.3);
           doc.setTextColor(51, 65, 85);
           doc.text(reason.slice(0, 32), rejX + 4, ry);
           doc.text(`${cnt} (${pct}%)`, rejX + halfW - 4, ry, { align: 'right' });
 
           doc.setFillColor(254, 242, 242);
-          doc.roundedRect(rejX + 4, ry + 1.5, barMax, 4, 1, 1, 'F');
+          doc.roundedRect(rejX + 4, ry + 1.8, barMax, 4.8, 1, 1, 'F');
           doc.setFillColor(225, 29, 72);
-          doc.roundedRect(rejX + 4, ry + 1.5, bw, 4, 1, 1, 'F');
+          doc.roundedRect(rejX + 4, ry + 1.8, bw, 4.8, 1, 1, 'F');
         });
       }
     }
