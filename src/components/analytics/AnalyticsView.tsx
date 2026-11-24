@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { parseISO, getMonth, getYear, getDay, isValid } from 'date-fns';
 import { safeFormatDate } from '../../utils/dateUtils';
+import { KmAuditAndQuotaTab } from './KmAuditAndQuotaTab';
 
 interface AnalyticsViewProps {
   trips: TripRequest[];
@@ -47,8 +48,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   contractors,
   cities,
 }) => {
-  // Aba ativa: 'requests' (Análise de Solicitações), 'costs' (Análise de Custos) ou 'parameters' (Parametrização)
-  const [activeTab, setActiveTab] = useState<'requests' | 'costs' | 'parameters'>('requests');
+  // Aba ativa: 'requests' (Análise de Solicitações), 'costs' (Análise de Custos), 'km_quota' (Franquia & Desvios KM) ou 'parameters' (Parametrização)
+  const [activeTab, setActiveTab] = useState<'requests' | 'costs' | 'km_quota' | 'parameters'>('requests');
 
   const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL'); // 'ALL' or '0'..'11'
@@ -671,7 +672,20 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <span>Análise de Custos</span>
             </button>
 
-            {/* Aba 3: Parametrização */}
+            {/* Aba 3: Franquia Contratada (75%) & Auditoria de Desvios KM */}
+            <button
+              onClick={() => setActiveTab('km_quota')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'km_quota'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+              }`}
+            >
+              <Gauge className="w-3.5 h-3.5" />
+              <span>Franquia & Desvios KM</span>
+            </button>
+
+            {/* Aba 4: Parametrização */}
             <button
               onClick={() => setActiveTab('parameters')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -1666,7 +1680,23 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* ABA 3: PARAMETRIZAÇÃO & CUSTOS POR KM                                    */}
+      {/* ABA 3: FRANQUIA MENSAL CONTRATADA (ALERTA 75%) & AUDITORIA DE DESVIOS KM  */}
+      {/* ========================================================================= */}
+      {activeTab === 'km_quota' && (
+        <KmAuditAndQuotaTab
+          trips={trips}
+          filteredTrips={scopedTrips}
+          vehicles={effectiveVehicles}
+          drivers={drivers}
+          contractors={contractors}
+          cities={cities}
+          selectedYear={selectedYear}
+          selectedMonth={selectedMonth}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* ABA 4: PARAMETRIZAÇÃO & CUSTOS POR KM                                    */}
       {/* ========================================================================= */}
       {activeTab === 'parameters' && (
         <div className="space-y-6">
