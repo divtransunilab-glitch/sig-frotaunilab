@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TripRequest } from '../../types';
 import { TripService } from '../../services/tripService';
 import { ExportService } from '../../services/exportService';
+import { ExecutiveReportService } from '../../services/executiveReportService';
 import { 
   FileSpreadsheet, 
   FileText, 
@@ -11,10 +12,10 @@ import {
   Milestone, 
   Building2, 
   TrendingUp,
-  Filter
+  Filter,
+  Sparkles
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { parseISO, isValid } from 'date-fns';
 
 interface ReportsViewProps {
   trips: TripRequest[];
@@ -25,7 +26,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
+  // Seções selecionáveis do Relatório Executivo em PDF
+  const [includeExecutiveSummary, setIncludeExecutiveSummary] = useState(true);
+  const [includeHeatmapAndRankings, setIncludeHeatmapAndRankings] = useState(true);
+  const [includeFinancialAndQuota, setIncludeFinancialAndQuota] = useState(true);
+  const [includeProcessTable, setIncludeProcessTable] = useState(true);
+
   const months = [
+    { value: -1, label: 'Ano Inteiro (Consolidado)' },
     { value: 0, label: 'Janeiro' },
     { value: 1, label: 'Fevereiro' },
     { value: 2, label: 'Março' },
@@ -41,12 +49,49 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
   ];
 
   const monthTrips = trips.filter((t) => {
-    const d = parseISO(t.departure_datetime);
-    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+    try {
+      const d = parseISO(t.departure_datetime);
+      if (!isValid(d)) return false;
+      if (d.getFullYear() !== selectedYear) return false;
+      if (selectedMonth !== -1 && d.getMonth() !== selectedMonth) return false;
+      return true;
+    } catch {
+      return false;
+    }
   });
 
-  const monthLabel = `${months.find((m) => m.value === selectedMonth)?.label} de ${selectedYear}`;
-  const metrics = TripService.getMetrics(selectedMonth, selectedYear);
+  const monthLabel =
+    selectedMonth === -1
+      ? `Consolidado ${selectedYear}`
+      : `${months.find((m) => m.value === selectedMonth)?.label} de ${selectedYear}`;
+
+  const metrics =
+    selectedMonth === -1
+      ? {
+          confirmed: monthTrips.filter((t) => t.status === 'Confirmado ao Demandante').length,
+          totalKmEstimated: Math.round(monthTrips.reduce((s, t) => s + (t.estimated_km || 0), 0)),
+          totalKmReal: Math.round(monthTrips.reduce((s, t) => s + (t.real_km || t.estimated_km || 0), 0)),
+          rejectedUnavailability: monthTrips.filter(
+            (t) =>
+              t.status === 'Indeferido' &&
+              (t.rejection_reason === 'Indisponibilidade de veículo' ||
+                t.rejection_reason === 'Indisponibilidade de veículo e KM')
+          ).length,
+          unavailabilityRate:
+            monthTrips.length > 0
+              ? (
+                  (monthTrips.filter(
+                    (t) =>
+                      t.status === 'Indeferido' &&
+                      (t.rejection_reason === 'Indisponibilidade de veículo' ||
+                        t.rejection_reason === 'Indisponibilidade de veículo e KM')
+                  ).length /
+                    monthTrips.length) *
+                  100
+                ).toFixed(1)
+              : '0.0',
+        }
+      : TripService.getMetrics(selectedMonth, selectedYear);
 
   const handleExportExcel = () => {
     ExportService.exportToExcel(
@@ -55,12 +100,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
     );
   };
 
+  const hasAnySection =
+    includeExecutiveSummary ||
+    includeHeatmapAndRankings ||
+    includeFinancialAndQuota ||
+    includeProcessTable;
+
   const handleExportPDF = () => {
-    ExportService.exportToPDF(
-      monthTrips.length > 0 ? monthTrips : trips,
-      'Relatório Mensal de Gestão de Frotas e Viagens Oficiais',
-      monthLabel
-    );
+    if (!hasAnySection) return;
+    ExecutiveReportService.generateExecutivePDF(monthTrips, {
+      periodLabel: monthLabel,
+      includeExecutiveSummary,
+      includeHeatmapAndRankings,
+      includeFinancialAndQuota,
+      includeProcessTable,
+    });
   };
 
   return (
@@ -161,24 +215,71 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ trips, onOpenImportMod
           </div>
         </div>
 
-        {/* PDF Export Card */}
-        <div className="bg-gradient-to-br from-slate-900 to-navy-950 rounded-2xl p-6 text-white shadow-card flex flex-col justify-between space-y-4">
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
-              <FileText className="w-5 h-5" />
+        {/* PDF Export Card — Relatório Executivo Completo com Gráficos, Heatmap e Análise Inteligente */}
+        <div className="bg-gradient-to-br from-slate-900 to-navy-950 rounded-2xl p-6 text-white shadow-card flex flex-col justify-between space-y-4 border border-blue-500/20">
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
+                <FileText className="w-5 h-5" />
+              </div>
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full">
+                <Sparkles className="w-3 h-3" />
+                BI + Análise Inteligente
+              </span>
             </div>
             <h3 className="text-lg font-bold text-white">
               Gerar Relatório Executivo em PDF
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Documento formatado em paisagem (A4) com cabeçalho oficial da UNILAB, sumário executivo e grade completa de processos.
+              Documento gerencial multi-páginas com KPIs, análise inteligente automática, heatmap, gráficos, custos e franquia.
             </p>
+
+            {/* Seletor de Seções */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 space-y-1.5 text-[11px] text-slate-200">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeExecutiveSummary}
+                  onChange={(e) => setIncludeExecutiveSummary(e.target.checked)}
+                  className="rounded accent-blue-500"
+                />
+                <span>Sumário Executivo & Análise Inteligente</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeHeatmapAndRankings}
+                  onChange={(e) => setIncludeHeatmapAndRankings(e.target.checked)}
+                  className="rounded accent-blue-500"
+                />
+                <span>Heatmap Operacional & Rankings</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeFinancialAndQuota}
+                  onChange={(e) => setIncludeFinancialAndQuota(e.target.checked)}
+                  className="rounded accent-blue-500"
+                />
+                <span>Custos, Franquia (≥75%) & Desvios KM</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeProcessTable}
+                  onChange={(e) => setIncludeProcessTable(e.target.checked)}
+                  className="rounded accent-blue-500"
+                />
+                <span>Anexo: Listagem Completa de Processos</span>
+              </label>
+            </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               onClick={handleExportPDF}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+              disabled={!hasAnySection}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
             >
               <Download className="w-4 h-4" />
               <span>Gerar Relatório PDF ({monthLabel})</span>
