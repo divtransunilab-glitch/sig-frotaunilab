@@ -544,25 +544,36 @@ export class TripService {
   }
 
   /**
-   * Envio de relatório de viagem pós-execução pela Contratada
+   * Envio ou edição de relatório de viagem pós-execução (Contratada / Motorista / Gerente)
    */
   static submitTravelReport(
     tripId: string,
     data: {
       real_km: number;
+      odometer_start?: number;
+      odometer_end?: number;
       fuel_liters?: number;
       toll_amount?: number;
       report_notes?: string;
+      preserveFinalizedStatus?: boolean;
     }
   ): TripRequest {
+    const existing = this.getTripById(tripId);
+    const keepFinalized =
+      data.preserveFinalizedStatus && existing?.travel_report_status === 'Finalizado no Sistema';
+
     return this.saveTrip({
       id: tripId,
       real_km: data.real_km,
+      ...(data.odometer_start !== undefined ? { odometer_start: data.odometer_start } : {}),
+      ...(data.odometer_end !== undefined ? { odometer_end: data.odometer_end } : {}),
       fuel_liters: data.fuel_liters,
       toll_amount: data.toll_amount,
       report_notes: data.report_notes,
-      report_submitted_at: new Date().toISOString(),
-      travel_report_status: 'Aguardando a Apreciação do Gerente',
+      report_submitted_at: existing?.report_submitted_at || new Date().toISOString(),
+      travel_report_status: keepFinalized
+        ? 'Finalizado no Sistema'
+        : 'Aguardando a Apreciação do Gerente',
     });
   }
 
