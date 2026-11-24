@@ -172,7 +172,20 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setAllocatedVehicleId(editingTrip.allocated_vehicle_id || '');
       setStatus(editingTrip.status || 'Pendente de Análise');
       setTravelReportStatus(editingTrip.travel_report_status || 'Não Aplicável');
-      setPassengerNames(editingTrip.passenger_names || '');
+      const loadedPassengers = (() => {
+        if (editingTrip.passenger_names && editingTrip.passenger_names.trim()) {
+          return editingTrip.passenger_names
+            .split(/\n|;/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .join('\n');
+        }
+        if (editingTrip.passenger_list && editingTrip.passenger_list.length > 0) {
+          return editingTrip.passenger_list.join('\n');
+        }
+        return '';
+      })();
+      setPassengerNames(loadedPassengers);
       setTripObjective(editingTrip.trip_objective || '');
       setNotes(editingTrip.notes || '');
       setIsParsingPdf(false);
@@ -429,6 +442,11 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       return;
     }
 
+    const normalizedPassengerList = passengerNames
+      .split(/\n|;/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     onSaveTrip({
       ...(editingTrip ? { id: editingTrip.id } : {}),
       process_number: processNumber.trim(),
@@ -456,7 +474,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       allocated_vehicle_id: allocatedVehicleId || undefined,
       status: allocatedVehicleId && allocatedDriverId ? 'Confirmado ao Demandante' : status,
       travel_report_status: travelReportStatus,
-      passenger_names: passengerNames.trim() || undefined,
+      passenger_names: normalizedPassengerList.length > 0 ? normalizedPassengerList.join('\n') : undefined,
+      passenger_list: normalizedPassengerList.length > 0 ? normalizedPassengerList : undefined,
       trip_objective: tripObjective.trim() || undefined,
       notes: notes.trim() || undefined,
     });
@@ -1199,17 +1218,36 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 </select>
               </div>
 
-              {/* Lista de Passageiros */}
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Relação / Lista de Passageiros
-                </label>
-                <input
-                  type="text"
-                  placeholder="Nomes dos passageiros ou turma..."
+              {/* Lista de Passageiros (um nome por linha) */}
+              <div className="sm:col-span-3">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="block font-semibold text-slate-700">
+                    Relação / Lista de Passageiros
+                  </label>
+                  <span className="text-[11px] font-medium text-slate-500">
+                    {(() => {
+                      const total = passengerNames
+                        .split(/\n|;/)
+                        .map((s) => s.trim())
+                        .filter(Boolean).length;
+                      return total > 0
+                        ? `${total} passageiro(s) listado(s) • 1 por linha`
+                        : 'Um nome por linha';
+                    })()}
+                  </span>
+                </div>
+                <textarea
+                  rows={Math.min(
+                    10,
+                    Math.max(
+                      3,
+                      passengerNames.split('\n').filter((l) => l.trim()).length || 3
+                    )
+                  )}
+                  placeholder={'Um passageiro por linha, ex.:\n1. Maria da Silva\n2. João Pereira'}
                   value={passengerNames}
                   onChange={(e) => setPassengerNames(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-brand-500 focus:outline-hidden"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 leading-relaxed focus:border-brand-500 focus:outline-hidden resize-y"
                 />
               </div>
 
