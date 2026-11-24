@@ -153,6 +153,10 @@ export interface TripRequest {
   report_notes?: string;
   report_submitted_at?: string;
   report_approved_at?: string;
+  driver_checkin_at?: string; // Horário real de saída registrado pelo motorista no celular
+  driver_checkout_at?: string; // Horário real de retorno registrado pelo motorista no celular
+  odometer_start?: number; // Hodômetro na saída
+  odometer_end?: number; // Hodômetro no retorno
   notes?: string;
   created_at: string;
   updated_at: string;

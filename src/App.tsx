@@ -27,10 +27,15 @@ import { FleetManagement } from './components/fleet/FleetManagement';
 import { AuditView } from './components/audit/AuditView';
 import { ReportsView } from './components/reports/ReportsView';
 import { PublicPortal } from './components/public/PublicPortal';
+import { DriverTripView } from './components/driver/DriverTripView';
 import { AuditService } from './services/auditService';
 import { supabase } from './services/supabaseClient';
+import { getDriverTripIdFromUrl } from './utils/driverLinkUtils';
 
 export function App() {
+  // Modo Mobile do Motorista (?motorista=<tripId>) — acesso direto via Link/QR Code sem login
+  const [driverTripId, setDriverTripId] = useState<string | null>(() => getDriverTripIdFromUrl());
+
   // Controle de Autenticação / Separação entre Portal do Solicitante e Sistema de Gestão
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('sigfrota_auth') === 'true';
@@ -388,6 +393,22 @@ export function App() {
   const reportPendingCount = trips.filter(
     (t) => t.travel_report_status === 'Aguardando a Apreciação do Gerente'
   ).length;
+
+  // MODO MOTORISTA (Link / QR Code da Ordem de Tráfego Digital)
+  if (driverTripId) {
+    return (
+      <DriverTripView
+        tripId={driverTripId}
+        onExitDriverMode={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('motorista');
+          window.history.replaceState({}, '', url.toString());
+          setDriverTripId(null);
+          loadTrips();
+        }}
+      />
+    );
+  }
 
   // SE NÃO ESTIVER AUTENTICADO: Exibe diretamente a Página Inicial / Portal do Solicitante & Login
   if (!isAuthenticated) {

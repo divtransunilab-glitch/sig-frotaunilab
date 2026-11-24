@@ -28,11 +28,13 @@ import {
   Trash2,
   Pencil,
   MessageCircle,
-  Mail
+  Mail,
+  Smartphone
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ExportService } from '../../services/exportService';
+import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
 
 interface TripDetailModalProps {
   trip: TripRequest | null;
@@ -57,9 +59,10 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   onOpenTrafficOrder,
   onOpenDelete,
 }) => {
-  if (!isOpen || !trip) return null;
-
   const [copied, setCopied] = useState(false);
+  const [copiedDriverLink, setCopiedDriverLink] = useState(false);
+
+  if (!isOpen || !trip) return null;
 
   const cities = DistanceService.getCities();
   const vehicle = FleetService.getVehicleById(trip.allocated_vehicle_id);
@@ -211,6 +214,18 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
     return [];
   })();
 
+  const driverOrderUrl = buildDriverOrderUrl(trip.id);
+
+  const handleCopyDriverLink = async () => {
+    try {
+      await navigator.clipboard.writeText(driverOrderUrl);
+      setCopiedDriverLink(true);
+      setTimeout(() => setCopiedDriverLink(false), 2500);
+    } catch {
+      window.prompt('Copie o link mobile do motorista:', driverOrderUrl);
+    }
+  };
+
   const handleSendDriverWhatsApp = () => {
     const passengerSection =
       parsedPassengers.length > 0
@@ -224,7 +239,10 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
 - *Saída:* ${departureFormatted}
 - *Local de Embarque:* ${trip.origin_address || getCityName(trip.origin_city_id)}
 - *Destino:* ${trip.destination_address || getCityName(trip.destination_city_id)}
-- *Retorno Previsto:* ${returnFormatted}${trip.notes ? `\n- *Obs.:* ${trip.notes}` : ''}${passengerSection}`;
+- *Retorno Previsto:* ${returnFormatted}${trip.notes ? `\n- *Obs.:* ${trip.notes}` : ''}${passengerSection}
+
+📲 *Ordem Digital (GPS, Checklist e Check-in/Check-out):*
+${driverOrderUrl}`;
 
     const digits = (driver?.phone || '').replace(/\D/g, '');
     const waNumber = digits.length >= 10 ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
@@ -598,14 +616,28 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
             </button>
 
             {(trip.status === 'Confirmado ao Demandante' || Boolean(trip.allocated_driver_id) || Boolean(trip.allocated_vehicle_id)) && (
-              <button
-                onClick={handleSendDriverWhatsApp}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-teal-900 bg-teal-50 border border-teal-200 hover:bg-teal-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
-                title="Enviar confirmação da viagem + lista completa de passageiros para o motorista via WhatsApp"
-              >
-                <Truck className="w-3.5 h-3.5 text-teal-600" />
-                <span>Enviar p/ Motorista</span>
-              </button>
+              <>
+                <button
+                  onClick={handleSendDriverWhatsApp}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-teal-900 bg-teal-50 border border-teal-200 hover:bg-teal-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  title="Enviar confirmação da viagem + lista de passageiros + link da Ordem Digital para o motorista via WhatsApp"
+                >
+                  <Truck className="w-3.5 h-3.5 text-teal-600" />
+                  <span>Enviar p/ Motorista</span>
+                </button>
+                <button
+                  onClick={handleCopyDriverLink}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  title="Copiar link mobile do motorista (GPS + Check-in/Check-out)"
+                >
+                  {copiedDriverLink ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Smartphone className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                  <span>{copiedDriverLink ? 'Copiado!' : 'Link Motorista'}</span>
+                </button>
+              </>
             )}
 
             <button

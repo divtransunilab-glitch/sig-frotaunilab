@@ -14,11 +14,14 @@ import {
   Fuel, 
   DollarSign, 
   X,
-  SendHorizontal
+  SendHorizontal,
+  Smartphone,
+  Check
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { safeFormatDate } from '../../utils/dateUtils';
+import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
 
 interface TravelReportViewProps {
   trips: TripRequest[];
@@ -28,6 +31,18 @@ interface TravelReportViewProps {
 export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTripUpdated }) => {
   const [selectedTrip, setSelectedTrip] = useState<TripRequest | null>(null);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [copiedTripId, setCopiedTripId] = useState<string | null>(null);
+
+  const handleCopyDriverLink = async (tripId: string) => {
+    const url = buildDriverOrderUrl(tripId);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedTripId(tripId);
+      setTimeout(() => setCopiedTripId((prev) => (prev === tripId ? null : prev)), 2500);
+    } catch {
+      window.prompt('Copie o link mobile do motorista:', url);
+    }
+  };
 
   // Form State
   const [realKm, setRealKm] = useState<string>('');
@@ -217,13 +232,45 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
                         {trip.estimated_km} km
                       </td>
                       <td className="p-3.5 text-center font-extrabold text-brand-700 bg-brand-50/50">
-                        {trip.real_km ? `${trip.real_km} km` : '-'}
+                        <div>{trip.real_km ? `${trip.real_km} km` : '-'}</div>
+                        {trip.odometer_start !== undefined && trip.odometer_end !== undefined && (
+                          <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                            {trip.odometer_start} → {trip.odometer_end}
+                          </div>
+                        )}
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
                         <StatusBadge reportStatus={trip.travel_report_status} />
+                        {trip.driver_checkout_at ? (
+                          <div className="text-[10px] font-bold text-emerald-700 mt-1 flex items-center gap-1">
+                            <Smartphone className="w-3 h-3" />
+                            <span>Enviado pelo motorista ({safeFormatDate(trip.driver_checkout_at, 'dd/MM HH:mm', '')})</span>
+                          </div>
+                        ) : trip.driver_checkin_at ? (
+                          <div className="text-[10px] font-bold text-sky-700 mt-1 flex items-center gap-1">
+                            <Smartphone className="w-3 h-3" />
+                            <span>Em viagem • Check-in {safeFormatDate(trip.driver_checkin_at, 'dd/MM HH:mm', '')}</span>
+                          </div>
+                        ) : null}
                       </td>
                       <td className="p-3.5 pr-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Copiar link mobile do motorista */}
+                          {!isFinalized && (
+                            <button
+                              onClick={() => handleCopyDriverLink(trip.id)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 transition-colors flex items-center gap-1"
+                              title="Copiar link mobile para o motorista fazer check-in/out"
+                            >
+                              {copiedTripId === trip.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Smartphone className="w-3.5 h-3.5 text-teal-600" />
+                              )}
+                              <span>{copiedTripId === trip.id ? 'Copiado!' : 'Link Motorista'}</span>
+                            </button>
+                          )}
+
                           {/* Botão Envio da Contratada */}
                           <button
                             onClick={() => handleOpenSubmitModal(trip)}

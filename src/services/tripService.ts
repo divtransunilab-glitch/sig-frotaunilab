@@ -69,6 +69,10 @@ export class TripService {
     if (includeExtendedCols) {
       base.intermediate_cities = trip.intermediate_cities && trip.intermediate_cities.length > 0 ? trip.intermediate_cities : null;
       base.extra_km = trip.extra_km ?? null;
+      base.driver_checkin_at = trip.driver_checkin_at || null;
+      base.driver_checkout_at = trip.driver_checkout_at || null;
+      base.odometer_start = trip.odometer_start ?? null;
+      base.odometer_end = trip.odometer_end ?? null;
     }
 
     return base;
@@ -327,7 +331,13 @@ export class TripService {
 
         if (res?.error) {
           const msg = String(res.error.message || '');
-          if (msg.includes('intermediate_cities') || msg.includes('extra_km') || res.error.code === 'PGRST204') {
+          if (
+            msg.includes('intermediate_cities') ||
+            msg.includes('extra_km') ||
+            msg.includes('driver_checkin_at') ||
+            msg.includes('odometer_start') ||
+            res.error.code === 'PGRST204'
+          ) {
             res = await supabase.from('trip_requests').upsert(basePayload);
           }
         }
@@ -565,6 +575,181 @@ export class TripService {
       travel_report_status: 'Finalizado no Sistema',
       report_approved_at: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Busca uma viagem específica diretamente no Supabase (para link/QR Code do motorista)
+   * com fallback automático para o cache local.
+   */
+  static async fetchTripByIdPublic(tripId: string): Promise<TripRequest | null> {
+    try {
+      const { data, error } = await supabase
+        .from('trip_requests')
+        .select('*')
+        .eq('id', tripId)
+        .maybeSingle();
+
+      if (!error && data) {
+        const fetched = data as TripRequest;
+        const local = this.loadTrips();
+        const existingIdx = local.findIndex((t) => t.id === fetched.id);
+        if (existingIdx !== -1) {
+          local[existingIdx] = { ...local[existingIdx], ...fetched };
+        } else {
+          local.push(fetched);
+        }
+        localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(local));
+        return fetched;
+      }
+    } catch (e) {
+      console.warn('Falha ao buscar viagem pública no Supabase:', e);
+    }
+
+    return this.getTripById(tripId) || null;
+  }
+
+  /**
+   * Registro de Check-in (Saída) pelo Motorista via Ordem de Tráfego Digital (Mobile)
+   */
+  static async submitDriverCheckIn(
+    tripId: string,
+    data: {
+      odometer_start: number;
+      checkin_at?: string;
+      notes?: string;
+    }
+  ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
+    const timestamp = data.checkin_at || new Date().toISOString();
+
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('driver_update_trip_execution', {
+        p_trip_id: tripId,
+        p_action: 'checkin',
+        p_odometer_start: data.odometer_start,
+        p_report_notes: data.notes || null,
+        p_event_timestamp: timestamp,
+      });
+
+      if (!rpcError && rpcData) {
+        const updated = rpcData as TripRequest;
+        const local = this.loadTrips();
+        const idx = local.findIndex((t) => t.id === updated.id);
+        if (idx !== -1) local[idx] = { ...local[idx], ...updated };
+        else local.push(updated);
+        localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(local));
+        return { trip: updated, syncedToCloud: true };
+      }
+
+      if (rpcError) {
+        console.warn('RPC driver_update_trip_execution indisponível ou recusada:', rpcError.message);
+      }
+    } catch (err) {
+      console.warn('Erro ao chamar RPC de check-in do motorista:', err);
+    }
+
+    // Fallback: se o dispositivo estiver autenticado ou offline, atualiza localmente e tenta sync padrão
+    const existing = this.getTripById(tripId);
+    if (!existing) {
+      return {
+        trip: null,
+        syncedToCloud: false,
+        warning: 'Não foi possível localizar a viagem para registrar a saída.',
+      };
+    }
+
+    const saved = this.saveTrip({
+      id: tripId,
+      driver_checkin_at: timestamp,
+      odometer_start: data.odometer_start,
+      report_notes: data.notes ? data.notes : existing.report_notes,
+    });
+
+    return {
+      trip: saved,
+      syncedToCloud: false,
+      warning:
+        'Check-in salvo neste aparelho. Para sincronização automática sem login no servidor, execute a migração SQL do módulo do motorista no Supabase.',
+    };
+  }
+
+  /**
+   * Registro de Check-out (Retorno + Relatório Pós-Viagem) pelo Motorista via Mobile
+   */
+  static async submitDriverCheckOut(
+    tripId: string,
+    data: {
+      odometer_start?: number;
+      odometer_end: number;
+      real_km: number;
+      checkout_at?: string;
+      fuel_liters?: number;
+      toll_amount?: number;
+      report_notes?: string;
+    }
+  ): Promise<{ trip: TripRequest | null; syncedToCloud: boolean; warning?: string }> {
+    const timestamp = data.checkout_at || new Date().toISOString();
+
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('driver_update_trip_execution', {
+        p_trip_id: tripId,
+        p_action: 'checkout',
+        p_odometer_start: data.odometer_start ?? null,
+        p_odometer_end: data.odometer_end,
+        p_real_km: data.real_km,
+        p_fuel_liters: data.fuel_liters ?? null,
+        p_toll_amount: data.toll_amount ?? null,
+        p_report_notes: data.report_notes || null,
+        p_event_timestamp: timestamp,
+      });
+
+      if (!rpcError && rpcData) {
+        const updated = rpcData as TripRequest;
+        const local = this.loadTrips();
+        const idx = local.findIndex((t) => t.id === updated.id);
+        if (idx !== -1) local[idx] = { ...local[idx], ...updated };
+        else local.push(updated);
+        localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(local));
+        GoogleSheetsService.syncTripToSheets(updated, 'update').catch(() => {});
+        return { trip: updated, syncedToCloud: true };
+      }
+
+      if (rpcError) {
+        console.warn('RPC driver_update_trip_execution (checkout) falhou:', rpcError.message);
+      }
+    } catch (err) {
+      console.warn('Erro ao chamar RPC de check-out do motorista:', err);
+    }
+
+    // Fallback local + sync padrão
+    const existing = this.getTripById(tripId);
+    if (!existing) {
+      return {
+        trip: null,
+        syncedToCloud: false,
+        warning: 'Não foi possível localizar a viagem para finalizar o relatório.',
+      };
+    }
+
+    const saved = this.saveTrip({
+      id: tripId,
+      driver_checkin_at: existing.driver_checkin_at || timestamp,
+      driver_checkout_at: timestamp,
+      odometer_start: data.odometer_start ?? existing.odometer_start,
+      odometer_end: data.odometer_end,
+      real_km: data.real_km,
+      fuel_liters: data.fuel_liters,
+      toll_amount: data.toll_amount,
+      report_notes: data.report_notes,
+      report_submitted_at: timestamp,
+      travel_report_status: 'Aguardando a Apreciação do Gerente',
+    });
+
+    return {
+      trip: saved,
+      syncedToCloud: false,
+      warning:
+        'Relatório salvo neste aparelho. Para sincronizar automaticamente sem login no servidor, execute a migração SQL do módulo do motorista no Supabase.',
+    };
   }
 
   /**

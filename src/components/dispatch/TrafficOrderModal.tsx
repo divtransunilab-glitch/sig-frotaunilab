@@ -1,18 +1,23 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import QRCode from 'qrcode';
 import { TripRequest } from '../../types';
 import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
-import { ExportService } from '../../services/exportService';
 import { safeFormatDate } from '../../utils/dateUtils';
+import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
 import { 
   X, 
   Printer, 
   Download, 
   FileText, 
   CheckCircle2,
-  Loader2
+  Loader2,
+  Copy,
+  Check,
+  Smartphone,
+  ExternalLink
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -27,9 +32,45 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [copiedDriverLink, setCopiedDriverLink] = useState(false);
+
+  const driverOrderUrl = trip ? buildDriverOrderUrl(trip.id) : '';
+
+  useEffect(() => {
+    let active = true;
+    if (!isOpen || !driverOrderUrl) {
+      setQrCodeDataUrl('');
+      return;
+    }
+    QRCode.toDataURL(driverOrderUrl, {
+      width: 140,
+      margin: 1,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (active) setQrCodeDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrCodeDataUrl('');
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, driverOrderUrl]);
+
   if (!isOpen || !trip) return null;
 
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const handleCopyDriverLink = async () => {
+    try {
+      await navigator.clipboard.writeText(driverOrderUrl);
+      setCopiedDriverLink(true);
+      setTimeout(() => setCopiedDriverLink(false), 2500);
+    } catch {
+      window.prompt('Copie o link mobile do motorista:', driverOrderUrl);
+    }
+  };
 
   const cities = DistanceService.getCities();
   const vehicle = FleetService.getVehicleById(trip.allocated_vehicle_id);
@@ -98,18 +139,31 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
         </div>
       </div>
 
-      <!-- Document Title Banner -->
+      <!-- Document Title Banner + QR Code Mobile do Motorista -->
       <table style="width: 100%; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;">
         <tr>
           <td style="vertical-align: middle;">
             <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Documento de Tráfego:</div>
             <div style="font-size: 13px; font-weight: 800; color: #0f172a;">ORDEM DE TRÁFEGO / AUTORIZAÇÃO DE SAÍDA Nº ${trip.process_number.replace('23282.', '')}</div>
+            <div style="font-size: 10px; margin-top: 3px;">
+              <span style="color: #64748b;">Processo SEI:</span> <strong style="color: #0f172a;">${trip.process_number}</strong>
+              &nbsp;&nbsp;|&nbsp;&nbsp;
+              <span style="color: #64748b;">Emissão:</span> <strong style="color: #0f172a;">${format(new Date(), 'dd/MM/yyyy HH:mm')}</strong>
+            </div>
           </td>
-          <td style="text-align: right; vertical-align: middle; font-size: 10.5px; white-space: nowrap;">
-            <span style="color: #64748b;">Processo SEI:</span> <strong style="color: #0f172a;">${trip.process_number}</strong>
-            &nbsp;&nbsp;|&nbsp;&nbsp;
-            <span style="color: #64748b;">Emissão:</span> <strong style="color: #0f172a;">${format(new Date(), 'dd/MM/yyyy HH:mm')}</strong>
-          </td>
+          ${
+            qrCodeDataUrl
+              ? `<td style="text-align: right; vertical-align: middle; width: 130px; padding-left: 8px; border-left: 1px solid #e2e8f0;">
+                  <div style="display: inline-flex; align-items: center; gap: 6px; text-align: right;">
+                    <div style="font-size: 8px; line-height: 1.25; color: #334155;">
+                      <strong style="color: #0f172a; display: block; text-transform: uppercase;">App Motorista</strong>
+                      GPS + Check-in<br/>e Relatório Digital
+                    </div>
+                    <img src="${qrCodeDataUrl}" alt="QR Code Motorista" style="width: 54px; height: 54px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 2px;" />
+                  </div>
+                </td>`
+              : ''
+          }
         </tr>
       </table>
 
@@ -353,6 +407,30 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyDriverLink}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-600/80 hover:bg-teal-600 text-white text-xs font-bold transition-colors"
+              title="Copiar link mobile da Ordem Digital para enviar ao motorista"
+            >
+              {copiedDriverLink ? (
+                <Check className="w-3.5 h-3.5 text-emerald-200" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden md:inline">
+                {copiedDriverLink ? 'Link Copiado!' : 'Link Motorista'}
+              </span>
+            </button>
+            <a
+              href={driverOrderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+              title="Pré-visualizar a página mobile do motorista em nova aba"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3 h-3 opacity-70" />
+            </a>
             <button
               onClick={handlePrint}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
