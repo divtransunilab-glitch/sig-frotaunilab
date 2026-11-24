@@ -65,7 +65,8 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
   const [tripLegs, setTripLegs] = useState<TripLeg[]>([]);
   const [fuelLiters, setFuelLiters] = useState<string>('');
   const [tollAmount, setTollAmount] = useState<string>('');
-  const [reportNotes, setReportNotes] = useState<string>('');
+  const [checkinNotes, setCheckinNotes] = useState<string>('');
+  const [checkoutNotes, setCheckoutNotes] = useState<string>('');
 
   // Passenger boarding checklist (local persistence per trip)
   const [boardedPassengers, setBoardedPassengers] = useState<Record<string, boolean>>({});
@@ -127,7 +128,15 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
             ? String(fetchedTrip.toll_amount)
             : ''
         );
-        setReportNotes(fetchedTrip.report_notes || '');
+        // Preserva a observação registrada na saída separada da observação final (retorno)
+        const existingNote = (fetchedTrip.report_notes || '').trim();
+        if (fetchedTrip.driver_checkin_at && !fetchedTrip.driver_checkout_at) {
+          setCheckinNotes(existingNote);
+          setCheckoutNotes('');
+        } else {
+          setCheckinNotes(existingNote);
+          setCheckoutNotes('');
+        }
         setTripLegs(buildDefaultTripLegs(fetchedTrip, cities));
       } else {
         setTrip(null);
@@ -340,11 +349,17 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
           : leg
     );
 
+    const formattedCheckinNote = checkinNotes.trim()
+      ? checkinNotes.trim().startsWith('[Saída]')
+        ? checkinNotes.trim()
+        : `[Saída] ${checkinNotes.trim()}`
+      : undefined;
+
     setIsSubmitting(true);
     const res = await TripService.submitDriverCheckIn(trip.id, {
       odometer_start: startVal,
       checkin_at: nowIso,
-      notes: reportNotes.trim() || undefined,
+      notes: formattedCheckinNote,
       trip_legs: initialLegs,
       access_token: urlAccessToken || undefined,
       driver_code: verifiedDriverCode || undefined,
@@ -355,6 +370,8 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     if (res.trip) {
       setTrip(res.trip);
       setTripLegs(initialLegs);
+      if (formattedCheckinNote) setCheckinNotes(formattedCheckinNote);
+      setCheckoutNotes('');
       setFeedback({
         type: res.syncedToCloud ? 'success' : 'warning',
         message: res.syncedToCloud
@@ -424,6 +441,23 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       return;
     }
 
+    // Combina a observação da saída (se existir) + a observação final / intercorrência do retorno
+    const departureNoteRaw = (checkinNotes || trip.report_notes || '').trim();
+    const departureNoteFormatted = departureNoteRaw
+      ? departureNoteRaw.startsWith('[Saída]')
+        ? departureNoteRaw
+        : `[Saída] ${departureNoteRaw}`
+      : '';
+    const returnNoteRaw = checkoutNotes.trim();
+    const returnNoteFormatted = returnNoteRaw
+      ? returnNoteRaw.startsWith('[Retorno]')
+        ? returnNoteRaw
+        : `[Retorno] ${returnNoteRaw}`
+      : '';
+    const combinedReportNotes = [departureNoteFormatted, returnNoteFormatted]
+      .filter(Boolean)
+      .join('\n') || undefined;
+
     setIsSubmitting(true);
     const res = await TripService.submitDriverCheckOut(trip.id, {
       odometer_start: firstOdoStart,
@@ -432,7 +466,7 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       trip_legs: finalizedLegs,
       fuel_liters: fuelLiters ? parseFloat(fuelLiters) : undefined,
       toll_amount: tollAmount ? parseFloat(tollAmount) : undefined,
-      report_notes: reportNotes.trim() || undefined,
+      report_notes: combinedReportNotes,
       access_token: urlAccessToken || undefined,
       driver_code: verifiedDriverCode || undefined,
       verified_name: driver?.name,
@@ -916,7 +950,7 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
               )}
 
               {trip.report_notes && (
-                <div className="bg-white rounded-xl p-2.5 border border-emerald-100 text-xs text-slate-700">
+                <div className="bg-white rounded-xl p-2.5 border border-emerald-100 text-xs text-slate-700 whitespace-pre-wrap">
                   <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">
                     Ocorrências / Observações
                   </span>
@@ -999,8 +1033,8 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={reportNotes}
-                  onChange={(e) => setReportNotes(e.target.value)}
+                  value={checkinNotes}
+                  onChange={(e) => setCheckinNotes(e.target.value)}
                   placeholder="Ex: Embarque pontual no Campus da Liberdade"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 bg-slate-50"
                 />
@@ -1180,16 +1214,24 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                 </div>
               </div>
 
-              {/* Observação / Intercorrência no KM Final */}
-              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 space-y-1.5">
+              {/* Observação / Intercorrência no KM Final (preserva também a observação registrada na saída) */}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 space-y-2">
+                {checkinNotes.trim() && (
+                  <div className="bg-white/90 border border-amber-200 rounded-xl px-3 py-2 text-[11px] text-slate-700">
+                    <span className="font-extrabold text-sky-800 block text-[10px] uppercase">
+                      Observação registrada na saída (será mantida no relatório):
+                    </span>
+                    <span className="whitespace-pre-wrap">{checkinNotes.replace(/^\[Saída\]\s*/i, '')}</span>
+                  </div>
+                )}
                 <label className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950">
                   <FileText className="w-4 h-4 text-amber-600" />
-                  <span>Observações / Intercorrências (KM Final)</span>
+                  <span>Observações / Intercorrências no Retorno (KM Final)</span>
                 </label>
                 <textarea
                   rows={3}
-                  value={reportNotes}
-                  onChange={(e) => setReportNotes(e.target.value)}
+                  value={checkoutNotes}
+                  onChange={(e) => setCheckoutNotes(e.target.value)}
                   placeholder="Informe se houve alguma intercorrência, atraso, desvio de rota, espera, problema mecânico ou observação importante..."
                   className="w-full px-3 py-2.5 text-xs rounded-xl border border-amber-300 bg-white focus:ring-2 focus:ring-amber-400 resize-none"
                 />
