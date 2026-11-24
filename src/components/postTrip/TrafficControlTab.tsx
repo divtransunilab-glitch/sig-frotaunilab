@@ -97,6 +97,35 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
     return parts.length > 0 ? parts.join(' • ') : '-';
   };
 
+  const getOdometerStart = (t: TripRequest): number | undefined => {
+    if (t.odometer_start !== undefined && t.odometer_start !== null) return t.odometer_start;
+    if (Array.isArray(t.trip_legs)) {
+      const first = t.trip_legs.find((l) => l.odometer_start !== undefined && l.odometer_start !== null);
+      if (first) return first.odometer_start;
+    }
+    return undefined;
+  };
+
+  const getOdometerEnd = (t: TripRequest): number | undefined => {
+    if (t.odometer_end !== undefined && t.odometer_end !== null) return t.odometer_end;
+    if (Array.isArray(t.trip_legs)) {
+      const last = [...t.trip_legs]
+        .reverse()
+        .find((l) => l.odometer_end !== undefined && l.odometer_end !== null);
+      if (last) return last.odometer_end;
+    }
+    return undefined;
+  };
+
+  const getOdometerText = (t: TripRequest): string => {
+    const start = getOdometerStart(t);
+    const end = getOdometerEnd(t);
+    if (start !== undefined && end !== undefined) return `${start} → ${end}`;
+    if (start !== undefined) return `Saída: ${start}`;
+    if (end !== undefined) return `Chegada: ${end}`;
+    return '-';
+  };
+
   const availableYears = useMemo(() => {
     const set = new Set<number>([now.getFullYear()]);
     trips.forEach((t) => {
@@ -235,10 +264,12 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
           Veículo: g.model,
           Placa: g.plate,
           Data: safeFormatDate(t.departure_datetime, 'dd/MM/yyyy', '-'),
+          'Processo SEI': t.process_number,
           'Horário da Demanda': `${safeFormatDate(t.departure_datetime, 'HH:mm', '-')} às ${safeFormatDate(t.return_datetime, 'HH:mm', '-')}`,
           Motorista: getDriverName(t.allocated_driver_id),
-          'Processo SEI': t.process_number,
           Solicitante: `${t.requester_name} (${t.macro_unit})`,
+          'Hodômetro Saída': getOdometerStart(t) ?? '-',
+          'Hodômetro Chegada': getOdometerEnd(t) ?? '-',
           'KM por Trecho': getLegsText(t),
           'KM Total': getEffectiveKm(t),
           Observações: getObservationsText(t),
@@ -253,11 +284,13 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
       const sheetName = g.plate.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 28) || 'SEM_PLACA';
       const rows = g.trips.map((t) => ({
         Data: safeFormatDate(t.departure_datetime, 'dd/MM/yyyy', '-'),
+        'Processo SEI': t.process_number,
         'Horário da Demanda': `${safeFormatDate(t.departure_datetime, 'HH:mm', '-')} às ${safeFormatDate(t.return_datetime, 'HH:mm', '-')}`,
         Motorista: getDriverName(t.allocated_driver_id),
         Veículo: g.model,
         Placa: g.plate,
-        'Processo SEI': t.process_number,
+        'Hodômetro Saída': getOdometerStart(t) ?? '-',
+        'Hodômetro Chegada': getOdometerEnd(t) ?? '-',
         'KM por Trecho': getLegsText(t),
         'KM Total': getEffectiveKm(t),
         Observações: getObservationsText(t),
@@ -312,32 +345,38 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
         margin: { left: 14, right: 14 },
         head: [[
           'Data',
-          'Horário Demanda',
+          'Nº Processo',
+          'Horário',
           'Motorista',
           'Veículo / Placa',
+          'Hodômetro',
           'KM por Trecho',
           'KM Total',
           'Observações',
         ]],
         body: g.trips.map((t) => [
           safeFormatDate(t.departure_datetime, 'dd/MM/yyyy', '-'),
+          t.process_number,
           `${safeFormatDate(t.departure_datetime, 'HH:mm', '-')} - ${safeFormatDate(t.return_datetime, 'HH:mm', '-')}`,
-          `${getDriverName(t.allocated_driver_id)}\n(${t.process_number})`,
+          getDriverName(t.allocated_driver_id),
           `${g.model}\n${g.plate}`,
+          getOdometerText(t),
           getLegsText(t),
           `${getEffectiveKm(t)} km`,
           getObservationsText(t),
         ]),
-        styles: { fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
+        styles: { fontSize: 7.2, cellPadding: 1.8, overflow: 'linebreak' },
         headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 26 },
-          2: { cellWidth: 42 },
-          3: { cellWidth: 34 },
-          4: { cellWidth: 72 },
-          5: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
-          6: { cellWidth: 57 },
+          0: { cellWidth: 18 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 21 },
+          3: { cellWidth: 32 },
+          4: { cellWidth: 28 },
+          5: { cellWidth: 24 },
+          6: { cellWidth: 58 },
+          7: { cellWidth: 16, halign: 'right', fontStyle: 'bold' },
+          8: { cellWidth: 40 },
         },
       });
 
@@ -558,9 +597,11 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
                   <thead>
                     <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                       <th className="p-3 pl-4">Data</th>
+                      <th className="p-3">Nº Processo</th>
                       <th className="p-3">Horário da Demanda</th>
                       <th className="p-3">Motorista</th>
                       <th className="p-3">Veículo / Placa</th>
+                      <th className="p-3">Hodômetro</th>
                       <th className="p-3">KM por Trecho</th>
                       <th className="p-3 text-right">KM Total</th>
                       <th className="p-3 pr-4">Observações</th>
@@ -569,17 +610,19 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
                   <tbody className="divide-y divide-slate-100">
                     {group.trips.map((t) => {
                       const hasLegs = Array.isArray(t.trip_legs) && t.trip_legs.length > 0;
+                      const odoStart = getOdometerStart(t);
+                      const odoEnd = getOdometerEnd(t);
                       return (
                         <tr key={t.id} className="hover:bg-slate-50/80 align-top">
                           <td className="p-3 pl-4 font-bold text-navy-950 whitespace-nowrap">
                             {safeFormatDate(t.departure_datetime, 'dd/MM/yyyy', '-')}
                           </td>
+                          <td className="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">
+                            {t.process_number}
+                          </td>
                           <td className="p-3 whitespace-nowrap text-slate-700 font-medium">
-                            <div>
-                              {safeFormatDate(t.departure_datetime, 'HH:mm', '-')} ➔{' '}
-                              {safeFormatDate(t.return_datetime, 'HH:mm', '-')}
-                            </div>
-                            <div className="text-[10px] text-slate-400">{t.process_number}</div>
+                            {safeFormatDate(t.departure_datetime, 'HH:mm', '-')} ➔{' '}
+                            {safeFormatDate(t.return_datetime, 'HH:mm', '-')}
                           </td>
                           <td className="p-3">
                             <div className="font-bold text-slate-900">
@@ -595,7 +638,18 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
                               {group.plate}
                             </div>
                           </td>
-                          <td className="p-3 min-w-[220px]">
+                          <td className="p-3 whitespace-nowrap">
+                            {odoStart !== undefined || odoEnd !== undefined ? (
+                              <div className="text-[11px] font-mono font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 inline-block">
+                                <span>{odoStart ?? '-'}</span>
+                                <span className="text-slate-400 mx-1">→</span>
+                                <span>{odoEnd ?? '-'}</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 min-w-[230px]">
                             {hasLegs ? (
                               <div className="space-y-1">
                                 {t.trip_legs!.map((leg, i) => (
@@ -603,9 +657,16 @@ export const TrafficControlTab: React.FC<TrafficControlTabProps> = ({ trips }) =
                                     key={leg.id || i}
                                     className="flex items-center justify-between gap-2 text-[11px] bg-slate-50 px-2 py-1 rounded border border-slate-200/70"
                                   >
-                                    <span className="font-semibold text-slate-700">
-                                      {leg.origin} ➔ {leg.destination}
-                                    </span>
+                                    <div>
+                                      <span className="font-semibold text-slate-700 block">
+                                        {leg.origin} ➔ {leg.destination}
+                                      </span>
+                                      {leg.odometer_start !== undefined && leg.odometer_end !== undefined && (
+                                        <span className="text-[10px] font-mono text-slate-400">
+                                          Hod.: {leg.odometer_start} → {leg.odometer_end}
+                                        </span>
+                                      )}
+                                    </div>
                                     <span className="font-extrabold text-emerald-700 whitespace-nowrap">
                                       {leg.distance_km ?? '-'} km
                                     </span>
