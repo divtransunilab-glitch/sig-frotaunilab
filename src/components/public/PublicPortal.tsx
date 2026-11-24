@@ -320,7 +320,12 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     const isConfirmed = trip.status === 'Confirmado ao Demandante';
                     const isPending = trip.status === 'Pendente de Análise';
                     const isRejected = trip.status === 'Indeferido';
+                    const isCancelled = trip.status.includes('Cancelado');
                     const isDateChanged = trip.status === 'Alterado a Data da Demanda';
+                    const receivedFormatted = safeFormatDate(trip.received_at, "dd/MM/yyyy 'às' HH:mm", 'Protocolada no sistema');
+                    const isTripFinished =
+                      trip.travel_report_status === 'Finalizado no Sistema' || Boolean(trip.driver_checkout_at);
+                    const isTripInProgress = Boolean(trip.driver_checkin_at) && !isTripFinished;
 
                     return (
                       <div key={trip.id} className="bg-white rounded-3xl border border-slate-200/80 shadow-card p-5 sm:p-7 space-y-6">
@@ -352,65 +357,118 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                           </div>
                         </div>
 
-                        {/* Visual Timeline of Progress */}
+                        {/* Linha do Tempo Real da Demanda (Cadastro -> Decisão DIVTRANS [-> Execução se Deferido]) */}
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-                            Linha do Tempo da Demanda
+                            Andamento da Demanda
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 relative">
-                            
-                            {/* Step 1: Recebimento */}
-                            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1">
+                          <div
+                            className={`grid grid-cols-1 gap-3 relative ${
+                              isConfirmed ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+                            }`}
+                          >
+                            {/* Etapa 1: Cadastro da Demanda */}
+                            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1">
                               <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                <span>1. Recebido</span>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>1. Demanda Cadastrada</span>
                               </div>
-                              <div className="text-[11px] text-emerald-700">Demanda protocolada no sistema</div>
+                              <div className="text-[11px] text-emerald-700">
+                                Protocolada em {receivedFormatted}
+                              </div>
                             </div>
 
-                            {/* Step 2: Análise Técnica */}
-                            <div className={`p-3.5 rounded-2xl border space-y-1 ${
-                              isRejected
-                                ? 'bg-rose-50 border-rose-200 text-rose-800'
-                                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                            }`}>
+                            {/* Etapa 2: Decisão / Situação Real na DIVTRANS */}
+                            <div
+                              className={`p-4 rounded-2xl border space-y-1 ${
+                                isConfirmed
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : isRejected
+                                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                                  : isCancelled
+                                  ? 'bg-slate-100 border-slate-300 text-slate-700'
+                                  : isDateChanged
+                                  ? 'bg-blue-50 border-blue-200 text-blue-800'
+                                  : 'bg-amber-50 border-amber-200 text-amber-900'
+                              }`}
+                            >
                               <div className="flex items-center gap-2 font-bold text-xs">
-                                {isRejected ? <XCircle className="w-4 h-4 text-rose-600" /> : <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
-                                <span>2. Análise Técnica</span>
+                                {isConfirmed ? (
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                ) : isRejected || isCancelled ? (
+                                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                ) : (
+                                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                                )}
+                                <span>
+                                  2.{' '}
+                                  {isConfirmed
+                                    ? 'Deferido / Confirmado'
+                                    : isRejected
+                                    ? 'Indeferido'
+                                    : isCancelled
+                                    ? 'Cancelado'
+                                    : isDateChanged
+                                    ? 'Data Alterada'
+                                    : 'Aguardando Análise'}
+                                </span>
                               </div>
-                              <div className="text-[11px]">{isRejected ? 'Indeferido pela gestão' : 'Viabilidade confirmada'}</div>
+                              <div className="text-[11px] leading-snug">
+                                {isConfirmed
+                                  ? 'Solicitação deferida com veículo e motorista escalados pela DIVTRANS.'
+                                  : isRejected
+                                  ? trip.rejection_reason
+                                    ? `Motivo: ${trip.rejection_reason}`
+                                    : 'Solicitação indeferida pela gestão de transportes.'
+                                  : isCancelled
+                                  ? trip.status === 'Cancelado pelo Demandante'
+                                    ? 'Cancelada a pedido do setor solicitante.'
+                                    : 'Cancelada pela unidade executante (DIVTRANS).'
+                                  : isDateChanged
+                                  ? 'Data da demanda reagendada; aguardando nova confirmação.'
+                                  : 'Demanda na fila da DIVTRANS aguardando deferimento ou parecer.'}
+                              </div>
                             </div>
 
-                            {/* Step 3: Despacho & Escala */}
-                            <div className={`p-3.5 rounded-2xl border space-y-1 ${
-                              isConfirmed
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                : 'bg-slate-50 border-slate-200 text-slate-400'
-                            }`}>
-                              <div className="flex items-center gap-2 font-bold text-xs">
-                                <Truck className="w-4 h-4" />
-                                <span>3. Despacho & Escala</span>
+                            {/* Etapa 3: Execução da Viagem (somente quando Deferido / Confirmado) */}
+                            {isConfirmed && (
+                              <div
+                                className={`p-4 rounded-2xl border space-y-1 ${
+                                  isTripFinished
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                    : isTripInProgress
+                                    ? 'bg-sky-50 border-sky-200 text-sky-900'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 font-bold text-xs">
+                                  {isTripFinished ? (
+                                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                  ) : (
+                                    <Truck
+                                      className={`w-4 h-4 shrink-0 ${
+                                        isTripInProgress ? 'text-sky-600' : 'text-slate-400'
+                                      }`}
+                                    />
+                                  )}
+                                  <span>
+                                    3.{' '}
+                                    {isTripFinished
+                                      ? 'Viagem Concluída'
+                                      : isTripInProgress
+                                      ? 'Em Viagem'
+                                      : 'Aguardando Saída'}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] leading-snug">
+                                  {isTripFinished
+                                    ? 'Retorno registrado e prestação de contas encerrada.'
+                                    : isTripInProgress
+                                    ? `Saída registrada em ${safeFormatDate(trip.driver_checkin_at, "dd/MM 'às' HH:mm", '')}.`
+                                    : `Saída prevista para ${departureFormatted}.`}
+                                </div>
                               </div>
-                              <div className="text-[11px]">
-                                {isConfirmed ? 'Veículo & Motorista alocados' : 'Aguardando escala'}
-                              </div>
-                            </div>
-
-                            {/* Step 4: Execução & Relatório */}
-                            <div className={`p-3.5 rounded-2xl border space-y-1 ${
-                              trip.travel_report_status === 'Finalizado no Sistema'
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                : 'bg-slate-50 border-slate-200 text-slate-400'
-                            }`}>
-                              <div className="flex items-center gap-2 font-bold text-xs">
-                                <ShieldCheck className="w-4 h-4" />
-                                <span>4. Conclusão</span>
-                              </div>
-                              <div className="text-[11px]">
-                                {trip.travel_report_status === 'Finalizado no Sistema' ? 'Viagem Finalizada' : 'Pendente de execução'}
-                              </div>
-                            </div>
-
+                            )}
                           </div>
                         </div>
 
