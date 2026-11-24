@@ -94,3 +94,35 @@ export function toTitleCasePtBr(text?: string, onlyIfUppercase = true): string {
     .join('\n')
     .trim();
 }
+
+/**
+ * Extrai e normaliza a lista de passageiros (um por item), suportando:
+ * - quebras de linha (\n)
+ * - ponto e vírgula (;)
+ * - listas numeradas coladas em linha única (ex.: "1. Maria Silva 2. João Pereira")
+ * - array passenger_list
+ */
+export function parsePassengerList(
+  passengerNames?: string | null,
+  passengerList?: string[] | null
+): string[] {
+  if (passengerNames && passengerNames.trim()) {
+    const raw = passengerNames
+      .replace(/\r\n/g, '\n')
+      // Quebra itens numerados que ficaram colados na mesma linha (ex.: "1. Maria 2. João")
+      .replace(/\s+(?=\d{1,3}\s*[.)\-]\s+[A-Za-zÀ-ÿ])/g, '\n');
+
+    const items = raw
+      .split(/\n|;/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (items.length > 0) return items;
+  }
+
+  if (Array.isArray(passengerList) && passengerList.length > 0) {
+    return passengerList.map((s) => String(s).trim()).filter(Boolean);
+  }
+
+  return [];
+}

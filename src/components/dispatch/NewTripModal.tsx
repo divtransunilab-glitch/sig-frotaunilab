@@ -11,6 +11,7 @@ import {
 import { DistanceService } from '../../services/distanceService';
 import { TripService } from '../../services/tripService';
 import { FleetService } from '../../services/fleetService';
+import { parsePassengerList } from '../../utils/textUtils';
 import { 
   X, 
   PlusCircle, 
@@ -172,20 +173,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       setAllocatedVehicleId(editingTrip.allocated_vehicle_id || '');
       setStatus(editingTrip.status || 'Pendente de Análise');
       setTravelReportStatus(editingTrip.travel_report_status || 'Não Aplicável');
-      const loadedPassengers = (() => {
-        if (editingTrip.passenger_names && editingTrip.passenger_names.trim()) {
-          return editingTrip.passenger_names
-            .split(/\n|;/)
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .join('\n');
-        }
-        if (editingTrip.passenger_list && editingTrip.passenger_list.length > 0) {
-          return editingTrip.passenger_list.join('\n');
-        }
-        return '';
-      })();
-      setPassengerNames(loadedPassengers);
+      setPassengerNames(
+        parsePassengerList(editingTrip.passenger_names, editingTrip.passenger_list).join('\n')
+      );
       setTripObjective(editingTrip.trip_objective || '');
       setNotes(editingTrip.notes || '');
       setIsParsingPdf(false);
@@ -442,10 +432,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       return;
     }
 
-    const normalizedPassengerList = passengerNames
-      .split(/\n|;/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const normalizedPassengerList = parsePassengerList(passengerNames);
 
     onSaveTrip({
       ...(editingTrip ? { id: editingTrip.id } : {}),

@@ -7,6 +7,7 @@ import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
 import { safeFormatDate } from '../../utils/dateUtils';
 import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
+import { parsePassengerList } from '../../utils/textUtils';
 import { 
   X, 
   Printer, 
@@ -95,18 +96,7 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
   const veiculoCapacidade = vehicle ? `${vehicle.capacity} passageiros` : `${trip.passenger_count} passageiros`;
   const contratadaNome = contractor ? contractor.name : 'Frota Oficial / Terceirizada UNILAB';
 
-  const parsedPassengers: string[] = (() => {
-    if (trip.passenger_names && trip.passenger_names.trim()) {
-      return trip.passenger_names
-        .split(/\n|;/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (trip.passenger_list && trip.passenger_list.length > 0) {
-      return trip.passenger_list;
-    }
-    return [];
-  })();
+  const parsedPassengers: string[] = parsePassengerList(trip.passenger_names, trip.passenger_list);
 
   const passengerCols = parsedPassengers.length > 20 ? '1fr 1fr 1fr' : '1fr 1fr';
   const passengerFontSize = parsedPassengers.length > 20 ? '8.5px' : '9.5px';

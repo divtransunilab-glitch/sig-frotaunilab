@@ -4,6 +4,7 @@ import { TripService } from '../../services/tripService';
 import { FleetService } from '../../services/fleetService';
 import { DistanceService } from '../../services/distanceService';
 import { safeFormatDate } from '../../utils/dateUtils';
+import { parsePassengerList } from '../../utils/textUtils';
 import {
   buildGoogleMapsUrl,
   buildWazeUrl,
@@ -156,17 +157,23 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
 
   const parsedPassengers: string[] = useMemo(() => {
     if (!trip) return [];
-    if (trip.passenger_names && trip.passenger_names.trim()) {
-      return trip.passenger_names
-        .split(/\n|;/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (trip.passenger_list && trip.passenger_list.length > 0) {
-      return trip.passenger_list;
-    }
-    return [];
+    return parsePassengerList(trip.passenger_names, trip.passenger_list);
   }, [trip]);
+
+  const handleToggleAllPassengers = () => {
+    if (parsedPassengers.length === 0) return;
+    const allChecked = parsedPassengers.every((p) => boardedPassengers[p]);
+    const next: Record<string, boolean> = {};
+    parsedPassengers.forEach((p) => {
+      next[p] = !allChecked;
+    });
+    setBoardedPassengers(next);
+    try {
+      localStorage.setItem(`sigfrota_boarding_${tripId}`, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
 
   const boardedCount = useMemo(
     () => parsedPassengers.filter((p) => boardedPassengers[p]).length,
@@ -562,22 +569,33 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
           )}
         </section>
 
-        {/* 3. Checklist Interativo de Passageiros */}
+        {/* 3. Relação de Passageiros & Conferência de Embarque */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <Users className="w-4 h-4 text-brand-600" />
-              <span>Conferência de Embarque</span>
+              <span>Relação de Passageiros & Embarque</span>
             </h2>
-            <span className="text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
-              {parsedPassengers.length > 0
-                ? `${boardedCount} / ${parsedPassengers.length} embarcados`
-                : `${trip.passenger_count} passageiro(s)`}
-            </span>
+            <div className="flex items-center gap-2">
+              {parsedPassengers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleToggleAllPassengers}
+                  className="text-[11px] font-bold text-slate-600 hover:text-navy-950 underline"
+                >
+                  {boardedCount === parsedPassengers.length ? 'Desmarcar todos' : 'Marcar todos'}
+                </button>
+              )}
+              <span className="text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
+                {parsedPassengers.length > 0
+                  ? `${boardedCount} / ${parsedPassengers.length} embarcados`
+                  : `${trip.passenger_count} passageiro(s)`}
+              </span>
+            </div>
           </div>
 
           {parsedPassengers.length > 0 ? (
-            <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto pr-1">
+            <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto pr-1">
               {parsedPassengers.map((name, idx) => {
                 const checked = Boolean(boardedPassengers[name]);
                 return (
@@ -604,7 +622,7 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
           ) : (
             <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">
               Comitiva de <strong>{trip.passenger_count}</strong> pessoa(s) sob responsabilidade de{' '}
-              <strong>{trip.requester_name}</strong>.
+              <strong>{trip.requester_name}</strong> (lista nominal não informada no processo).
             </p>
           )}
         </section>

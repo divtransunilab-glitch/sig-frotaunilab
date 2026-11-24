@@ -35,6 +35,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ExportService } from '../../services/exportService';
 import { buildDriverOrderUrl } from '../../utils/driverLinkUtils';
+import { parsePassengerList } from '../../utils/textUtils';
 
 interface TripDetailModalProps {
   trip: TripRequest | null;
@@ -201,18 +202,7 @@ Divisão de Transportes (DIVTRANS / PROADI - UNILAB)`;
     window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
   };
 
-  const parsedPassengers: string[] = (() => {
-    if (trip.passenger_names && trip.passenger_names.trim()) {
-      return trip.passenger_names
-        .split(/\n|;/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (trip.passenger_list && trip.passenger_list.length > 0) {
-      return trip.passenger_list;
-    }
-    return [];
-  })();
+  const parsedPassengers: string[] = parsePassengerList(trip.passenger_names, trip.passenger_list);
 
   const driverOrderUrl = buildDriverOrderUrl(trip.id);
 
@@ -364,10 +354,18 @@ ${driverOrderUrl}`;
                   <span className="text-slate-400">Lotação:</span>{' '}
                   <strong className="text-slate-900">{trip.passenger_count} passageiros</strong>
                 </div>
-                {trip.passenger_names && (
-                  <div>
-                    <span className="text-slate-400">Relação:</span>{' '}
-                    <span className="text-slate-700">{trip.passenger_names}</span>
+                {parsedPassengers.length > 0 && (
+                  <div className="pt-1">
+                    <span className="text-slate-400 block mb-1">
+                      Relação ({parsedPassengers.length}):
+                    </span>
+                    <ul className="bg-slate-50 border border-slate-200/70 rounded-xl p-2.5 space-y-1 max-h-40 overflow-y-auto text-slate-700">
+                      {parsedPassengers.map((p, idx) => (
+                        <li key={`${p}-${idx}`} className="leading-snug border-b border-slate-200/50 last:border-b-0 pb-1 last:pb-0">
+                          {p}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
                 {trip.trip_objective && (

@@ -583,6 +583,7 @@ export class TripService {
    */
   static async fetchTripByIdPublic(tripId: string): Promise<TripRequest | null> {
     try {
+      await this.pendingSyncPromise;
       const { data, error } = await supabase
         .from('trip_requests')
         .select('*')
@@ -593,13 +594,23 @@ export class TripService {
         const fetched = data as TripRequest;
         const local = this.loadTrips();
         const existingIdx = local.findIndex((t) => t.id === fetched.id);
+        const existing = existingIdx !== -1 ? local[existingIdx] : undefined;
+        const merged: TripRequest = {
+          ...(existing || {}),
+          ...fetched,
+          passenger_names: fetched.passenger_names || existing?.passenger_names,
+          passenger_list:
+            fetched.passenger_list && fetched.passenger_list.length > 0
+              ? fetched.passenger_list
+              : existing?.passenger_list,
+        };
         if (existingIdx !== -1) {
-          local[existingIdx] = { ...local[existingIdx], ...fetched };
+          local[existingIdx] = merged;
         } else {
-          local.push(fetched);
+          local.push(merged);
         }
         localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(local));
-        return fetched;
+        return merged;
       }
     } catch (e) {
       console.warn('Falha ao buscar viagem pública no Supabase:', e);
