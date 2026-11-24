@@ -10,9 +10,11 @@ import {
   AlertTriangle,
   Clock,
   ChevronRight,
+  ChevronDown,
   X,
   Building,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Menu
 } from 'lucide-react';
 import { format, parseISO, isValid, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -50,8 +52,10 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [sheetsConfigured, setSheetsConfigured] = useState(() => GoogleSheetsService.isConfigured());
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleSheetsChange = () => setSheetsConfigured(GoogleSheetsService.isConfigured());
@@ -61,11 +65,14 @@ export const Header: React.FC<HeaderProps> = ({
 
   const currentDateFormatted = format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR });
 
-  // Fecha o dropdown de notificações ao clicar fora
+  // Fecha os dropdowns ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsNotificationsOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -233,7 +240,10 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Notification Bell with 3-Day Escalation Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
-                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                onClick={() => {
+                  setIsNotificationsOpen(!isNotificationsOpen);
+                  setIsUserMenuOpen(false);
+                }}
                 className={`relative p-2 rounded-xl border transition-all flex items-center justify-center ${
                   notificationCount > 0
                     ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs ring-2 ring-amber-400/20'
@@ -340,55 +350,108 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* User Avatar, Password Change & Logout */}
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-navy-800 text-white flex items-center justify-center font-bold text-xs shadow-xs uppercase">
-                {initials}
-              </div>
-              <div className="hidden lg:block text-left">
-                <div className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[180px]" title={displayName}>
-                  {displayName}
+            {/* Botão único de Menu (Dropdown com Perfil, Backup Sheets, Alterar Senha e Sair) */}
+            <div className="relative pl-2 border-l border-slate-200" ref={userMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUserMenuOpen((prev) => !prev);
+                  setIsNotificationsOpen(false);
+                }}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all ${
+                  isUserMenuOpen
+                    ? 'bg-slate-100 border-slate-300 shadow-xs'
+                    : 'bg-white hover:bg-slate-50 border-slate-200'
+                }`}
+                title="Abrir menu da conta e configurações"
+              >
+                <div className="w-7 h-7 rounded-full bg-navy-800 text-white flex items-center justify-center font-bold text-[11px] shadow-xs uppercase">
+                  {initials}
                 </div>
-                <div className="text-[10px] text-slate-500 font-medium">DIVTRANS / PROADI</div>
-              </div>
+                <div className="hidden sm:block text-left">
+                  <div className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[130px]" title={displayName}>
+                    {displayName}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium leading-tight">Menu</div>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 text-slate-500 transition-transform duration-150 ${
+                    isUserMenuOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
-              {onOpenGoogleSheetsModal && (
-                <button
-                  onClick={onOpenGoogleSheetsModal}
-                  title="Configurar backup automático no Google Sheets"
-                  className="ml-1 p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold relative"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  <span className="hidden sm:inline text-emerald-800">Backup Sheets</span>
-                  {sheetsConfigured && (
-                    <span
-                      className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"
-                      title="Backup automático ativo"
-                    />
-                  )}
-                </button>
-              )}
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  {/* Cabeçalho do Perfil */}
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200/80 flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-full bg-navy-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-navy-950 truncate" title={displayName}>
+                        {displayName}
+                      </div>
+                      <div className="text-[10px] font-semibold text-slate-500">DIVTRANS / PROADI</div>
+                    </div>
+                  </div>
 
-              {onOpenChangePasswordModal && (
-                <button
-                  onClick={onOpenChangePasswordModal}
-                  title="Alterar sua senha de acesso no Supabase"
-                  className="ml-1 p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
-                >
-                  <KeyRound className="w-4 h-4 text-brand-600" />
-                  <span className="hidden sm:inline text-brand-800">Alterar Senha</span>
-                </button>
-              )}
+                  {/* Opções do Menu */}
+                  <div className="p-1.5 space-y-0.5 text-xs">
+                    {onOpenGoogleSheetsModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          onOpenGoogleSheetsModal();
+                        }}
+                        className="w-full px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-emerald-900 font-semibold flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                          <span>Backup Google Sheets</span>
+                        </span>
+                        {sheetsConfigured && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Ativo
+                          </span>
+                        )}
+                      </button>
+                    )}
 
-              {onLogout && (
-                <button
-                  onClick={onLogout}
-                  title="Encerrar sessão e voltar ao Portal do Solicitante"
-                  className="ml-1 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">Sair</span>
-                </button>
+                    {onOpenChangePasswordModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          onOpenChangePasswordModal();
+                        }}
+                        className="w-full px-3 py-2.5 rounded-xl hover:bg-brand-50 text-slate-700 hover:text-brand-900 font-semibold flex items-center gap-2.5 transition-colors"
+                      >
+                        <KeyRound className="w-4 h-4 text-brand-600" />
+                        <span>Alterar Senha</span>
+                      </button>
+                    )}
+
+                    {onLogout && (
+                      <>
+                        <div className="my-1 border-t border-slate-100" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            onLogout();
+                          }}
+                          className="w-full px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-700 font-bold flex items-center gap-2.5 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4 text-rose-600" />
+                          <span>Sair do Sistema</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 

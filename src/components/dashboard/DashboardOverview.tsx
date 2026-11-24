@@ -23,7 +23,8 @@ import {
   Layers,
   Check,
   Fuel,
-  Filter
+  Filter,
+  Gauge
 } from 'lucide-react';
 import { format, parseISO, getMonth, getYear, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -203,6 +204,87 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
   const cities = DistanceService.getCities();
   const contractors = FleetService.getContractors();
+  const vehicles = FleetService.getVehicles();
+
+  // Monitoramento de Franquia Mensal dos Veículos da Contratada (Alerta >= 75%)
+  const contractorQuotaAlert = useMemo(() => {
+    let defaultQuota = 3000;
+    let threshold = 75;
+    let vehicleQuotas: Record<string, number> = {};
+
+    try {
+      const raw = localStorage.getItem('sigfrota_contractor_km_quotas_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Number(parsed.defaultVehicleMonthlyKm) > 0) defaultQuota = Number(parsed.defaultVehicleMonthlyKm);
+        if (Number(parsed.alertThresholdPercent) > 0) threshold = Number(parsed.alertThresholdPercent);
+        if (parsed.vehicleQuotas && typeof parsed.vehicleQuotas === 'object') {
+          vehicleQuotas = parsed.vehicleQuotas;
+        }
+      }
+    } catch {
+      // fallback padrão
+    }
+
+    const refMonth = selectedMonth === 'ALL' ? currentMonthIdx : parseInt(selectedMonth, 10);
+    const refYear = selectedYear === 'ALL' ? currentYearNum : parseInt(selectedYear, 10);
+
+    const contractedIds = new Set(
+      contractors
+        .filter((c) => {
+          if (c.id === 'cont-4') return false;
+          const n = c.name.toLowerCase();
+          return !n.includes('frota própria') && !n.includes('frota propria') && !n.includes('própria / unilab');
+        })
+        .map((c) => c.id)
+    );
+
+    const contractedVehicles = vehicles.filter(
+      (v) => v.is_active && v.contractor_id && contractedIds.has(v.contractor_id)
+    );
+
+    const monthConfirmedTrips = trips.filter((t) => {
+      if (t.status !== 'Confirmado ao Demandante') return false;
+      try {
+        const d = parseISO(t.departure_datetime);
+        if (!isValid(d)) return false;
+        return getMonth(d) === refMonth && getYear(d) === refYear;
+      } catch {
+        return false;
+      }
+    });
+
+    const items = contractedVehicles
+      .map((v) => {
+        const vTrips = monthConfirmedTrips.filter((t) => t.allocated_vehicle_id === v.id);
+        const usedKm = Number(
+          vTrips
+            .reduce((acc, t) => acc + (t.real_km && t.real_km > 0 ? t.real_km : t.estimated_km || 0), 0)
+            .toFixed(1)
+        );
+        const quotaKm =
+          vehicleQuotas[v.id] !== undefined && vehicleQuotas[v.id] > 0 ? vehicleQuotas[v.id] : defaultQuota;
+        const percent = quotaKm > 0 ? Number(((usedKm / quotaKm) * 100).toFixed(1)) : 0;
+        const contractor = contractors.find((c) => c.id === v.contractor_id);
+        return { vehicle: v, contractorName: contractor?.name || 'Contratada', usedKm, quotaKm, percent };
+      })
+      .sort((a, b) => b.percent - a.percent || b.usedKm - a.usedKm);
+
+    const aboveThreshold = items.filter((i) => i.percent >= threshold);
+    const topUsage = items[0] || null;
+    const monthNames = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+    ];
+
+    return {
+      threshold,
+      refLabel: `${monthNames[refMonth]} / ${refYear}`,
+      totalContracted: contractedVehicles.length,
+      aboveThreshold,
+      topUsage,
+    };
+  }, [trips, vehicles, contractors, selectedMonth, selectedYear, currentMonthIdx, currentYearNum]);
 
   const getCityName = (id: string) => {
     const c = cities.find((item) => item.id === id);
@@ -421,6 +503,132 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
 
+      </div>
+
+      {/* CARD DE ALERTA: VEÍCULOS DA CONTRATADA ACIMA DE 75% DA FRANQUIA MENSAL */}
+      <div
+        className={`rounded-2xl border p-4 sm:p-5 shadow-card transition-all ${
+          contractorQuotaAlert.aboveThreshold.length > 0
+            ? 'bg-gradient-to-r from-amber-50 via-amber-50/70 to-rose-50/50 border-amber-300'
+            : 'bg-white border-slate-200/80'
+        }`}
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                contractorQuotaAlert.aboveThreshold.length > 0
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+              }`}
+            >
+              {contractorQuotaAlert.aboveThreshold.length > 0 ? (
+                <AlertTriangle className="w-5 h-5" />
+              ) : (
+                <Gauge className="w-5 h-5" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-extrabold text-navy-950">
+                  Franquia Mensal — Veículos da Contratada ({contractorQuotaAlert.refLabel})
+                </h3>
+                <span
+                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    contractorQuotaAlert.aboveThreshold.length > 0
+                      ? 'bg-rose-600 text-white border-rose-700'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {contractorQuotaAlert.aboveThreshold.length > 0
+                    ? `${contractorQuotaAlert.aboveThreshold.length} acima de ${contractorQuotaAlert.threshold}%`
+                    : `Todos abaixo de ${contractorQuotaAlert.threshold}%`}
+                </span>
+              </div>
+
+              {contractorQuotaAlert.aboveThreshold.length > 0 ? (
+                <p className="text-xs text-amber-900 mt-0.5">
+                  Os veículos abaixo já atingiram ou ultrapassaram{' '}
+                  <strong>{contractorQuotaAlert.threshold}%</strong> da franquia mensal contratada:
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Nenhum dos <strong>{contractorQuotaAlert.totalContracted}</strong> veículos contratados atingiu{' '}
+                  {contractorQuotaAlert.threshold}% da franquia neste mês.
+                  {contractorQuotaAlert.topUsage && contractorQuotaAlert.topUsage.usedKm > 0 && (
+                    <>
+                      {' '}
+                      Maior uso atual:{' '}
+                      <strong className="text-navy-950">
+                        {contractorQuotaAlert.topUsage.vehicle.plate} ({contractorQuotaAlert.topUsage.percent}% —{' '}
+                        {contractorQuotaAlert.topUsage.usedKm}/{contractorQuotaAlert.topUsage.quotaKm} km)
+                      </strong>
+                      .
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigateTab('analytics')}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-navy-950 hover:bg-navy-900 text-white flex items-center gap-1.5 shrink-0 self-start md:self-auto shadow-xs transition-colors"
+          >
+            <span>Ver Franquias no BI</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {contractorQuotaAlert.aboveThreshold.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-4 pt-3 border-t border-amber-200/80">
+            {contractorQuotaAlert.aboveThreshold.map((item) => {
+              const isExceeded = item.percent >= 100;
+              return (
+                <div
+                  key={item.vehicle.id}
+                  className={`rounded-xl border p-3 bg-white flex flex-col gap-1.5 ${
+                    isExceeded ? 'border-rose-300' : 'border-amber-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono font-extrabold text-xs text-navy-950 bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded">
+                        {item.vehicle.plate}
+                      </span>
+                      <span className="text-xs font-bold text-slate-700 truncate">
+                        {item.vehicle.type}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                        isExceeded
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-amber-500 text-white'
+                      }`}
+                    >
+                      {item.percent}%
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${isExceeded ? 'bg-rose-600' : 'bg-amber-500'}`}
+                      style={{ width: `${Math.min(100, item.percent)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+                    <span className="truncate">{item.contractorName}</span>
+                    <strong className="text-navy-950 whitespace-nowrap">
+                      {item.usedKm.toLocaleString('pt-BR')} / {item.quotaKm.toLocaleString('pt-BR')} km
+                    </strong>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* BARRA DE STATUS MULTICOLORIDA CONSOLIDADA */}
