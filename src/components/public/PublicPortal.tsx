@@ -69,14 +69,6 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
     setHasSearched(true);
   };
 
-  const handleQuickSearchDemo = (num: string) => {
-    setSearchQuery(num);
-    const results = TripService.searchPublicTrips(num);
-    setSearchResults(results);
-    setHasSearched(true);
-    setActiveTab('track');
-  };
-
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -277,25 +269,6 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <span>Pesquisar Processo</span>
                 </button>
               </form>
-
-              {/* Quick Demo Shortcuts */}
-              <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap pt-1 border-t border-slate-100">
-                <span className="font-semibold text-slate-600">Exemplos para consulta rápida:</span>
-                <button
-                  type="button"
-                  onClick={() => handleQuickSearchDemo('23282.000859/2026-42')}
-                  className="text-emerald-700 hover:underline font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
-                >
-                  23282.000859/2026-42 (Confirmada)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickSearchDemo('23282.000930/2026-71')}
-                  className="text-amber-700 hover:underline font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200"
-                >
-                  23282.000930/2026-71 (Pendente)
-                </button>
-              </div>
             </div>
 
             {/* Results List */}
