@@ -1269,6 +1269,175 @@ export class ExecutiveReportService {
     }
 
     // =========================================================================
+    // SEÇÃO: QUALIDADE & ÍNDICE DE SATISFAÇÃO DOS USUÁRIOS (AVALIAÇÕES PÓS-VIAGEM)
+    // =========================================================================
+    const ratedTrips = trips.filter(
+      (t) => typeof t.rating_overall === 'number' && t.rating_overall > 0
+    );
+    if (ratedTrips.length > 0) {
+      ensureNewPage();
+      drawPageHeader('Qualidade & Índice de Satisfação dos Usuários (Avaliações Pós-Viagem)');
+
+      const rCount = ratedTrips.length;
+      const avgOverall =
+        ratedTrips.reduce((acc, t) => acc + Number(t.rating_overall || 0), 0) / rCount;
+      const avgPunctuality =
+        ratedTrips.reduce((acc, t) => acc + Number(t.rating_punctuality || t.rating_overall || 0), 0) /
+        rCount;
+      const avgVehicle =
+        ratedTrips.reduce((acc, t) => acc + Number(t.rating_vehicle || t.rating_overall || 0), 0) /
+        rCount;
+      const avgDriver =
+        ratedTrips.reduce((acc, t) => acc + Number(t.rating_driver || t.rating_overall || 0), 0) /
+        rCount;
+
+      // 4 KPI Cards de Satisfação
+      const satY = 34;
+      const satCardW = (contentW - 9) / 4;
+      const satCardH = 26;
+      const satCards = [
+        {
+          label: 'NOTA GERAL MÉDIA',
+          value: `${avgOverall.toFixed(1)} / 5.0`,
+          sub: `${rCount} ${rCount === 1 ? 'avaliação' : 'avaliações'} no período`,
+          bg: [255, 251, 235] as [number, number, number],
+          border: [252, 211, 77] as [number, number, number],
+          accent: [180, 83, 9] as [number, number, number],
+        },
+        {
+          label: 'PONTUALIDADE',
+          value: `${avgPunctuality.toFixed(1)} / 5.0`,
+          sub: 'Horários de saída e retorno',
+          bg: [248, 250, 252] as [number, number, number],
+          border: [203, 213, 225] as [number, number, number],
+          accent: [15, 23, 42] as [number, number, number],
+        },
+        {
+          label: 'VEÍCULO / CONFORTO',
+          value: `${avgVehicle.toFixed(1)} / 5.0`,
+          sub: 'Conservação e limpeza',
+          bg: [248, 250, 252] as [number, number, number],
+          border: [203, 213, 225] as [number, number, number],
+          accent: [15, 23, 42] as [number, number, number],
+        },
+        {
+          label: 'ATEND. MOTORISTA',
+          value: `${avgDriver.toFixed(1)} / 5.0`,
+          sub: 'Postura e condução segura',
+          bg: [248, 250, 252] as [number, number, number],
+          border: [203, 213, 225] as [number, number, number],
+          accent: [15, 23, 42] as [number, number, number],
+        },
+      ];
+
+      satCards.forEach((card, idx) => {
+        const cx = marginX + idx * (satCardW + 3);
+        doc.setFillColor(...card.bg);
+        doc.setDrawColor(...card.border);
+        doc.roundedRect(cx, satY, satCardW, satCardH, 2.2, 2.2, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(card.label, cx + 3.5, satY + 6.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(...card.accent);
+        doc.text(card.value, cx + 3.5, satY + 15.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.4);
+        doc.setTextColor(100, 116, 139);
+        doc.text(card.sub, cx + 3.5, satY + 22);
+      });
+
+      // Distribuição das Notas (5 estrelas a 1 estrela)
+      const distY = satY + satCardH + 6;
+      const distH = 44;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(marginX, distY, contentW, distH, 2.2, 2.2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Distribuição das Avaliações por Faixa de Nota', marginX + 4, distY + 6.5);
+
+      const starLevels = [5, 4, 3, 2, 1];
+      starLevels.forEach((star, idx) => {
+        const sy = distY + 11.5 + idx * 6.2;
+        const starCount = ratedTrips.filter(
+          (t) => Math.round(Number(t.rating_overall || 0)) === star
+        ).length;
+        const pct = rCount > 0 ? Math.round((starCount / rCount) * 100) : 0;
+        const barX = marginX + 26;
+        const barMaxW = contentW - 56;
+        const bw = starCount > 0 ? Math.max(2, (starCount / rCount) * barMaxW) : 0;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.2);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`${star} ${star === 1 ? 'estrela' : 'estrelas'}`, marginX + 4, sy + 3.3);
+
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(barX, sy, barMaxW, 4.2, 1, 1, 'F');
+        if (bw > 0) {
+          doc.setFillColor(star >= 4 ? 16 : star === 3 ? 217 : 225, star >= 4 ? 185 : star === 3 ? 119 : 29, star >= 4 ? 129 : star === 3 ? 6 : 72);
+          doc.roundedRect(barX, sy, bw, 4.2, 1, 1, 'F');
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`${starCount} (${pct}%)`, marginX + contentW - 4, sy + 3.3, { align: 'right' });
+      });
+
+      // Comentários Recentes dos Solicitantes
+      const recentComments = [...ratedTrips]
+        .filter((t) => Boolean(t.rating_comment && t.rating_comment.trim()))
+        .sort((a, b) => String(b.rated_at || '').localeCompare(String(a.rated_at || '')))
+        .slice(0, 10);
+
+      const commStartY = distY + distH + 7;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(
+        `Comentários Registrados pelos Solicitantes (${recentComments.length})`,
+        marginX,
+        commStartY
+      );
+
+      autoTable(doc, {
+        startY: commStartY + 3,
+        head: [['Processo SEI', 'Unidade', 'Nota', 'Comentário / Feedback', 'Data']],
+        body:
+          recentComments.length > 0
+            ? recentComments.map((t) => [
+                t.process_number,
+                t.macro_unit || '-',
+                `${Number(t.rating_overall || 0).toFixed(1)} / 5`,
+                t.rating_comment || '-',
+                safeFormatDate(t.rated_at, 'dd/MM/yyyy', '-'),
+              ])
+            : [['-', '-', '-', 'Nenhum comentário textual registrado no período.', '-']],
+        theme: 'grid',
+        headStyles: { fillColor: [180, 83, 9], textColor: 255, fontSize: 7.2, fontStyle: 'bold' },
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+        alternateRowStyles: { fillColor: [255, 251, 235] },
+        margin: { left: marginX, right: marginX, bottom: 16 },
+        columnStyles: {
+          0: { cellWidth: 30 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+          3: { cellWidth: 100 },
+          4: { cellWidth: 20, halign: 'center' },
+        },
+      });
+    }
+
+    // =========================================================================
     // PÁGINA 5+ (A4 RETRATO): ANEXO OPERACIONAL — GRADE COMPLETA DE PROCESSOS
     // =========================================================================
     if (options.includeProcessTable) {
