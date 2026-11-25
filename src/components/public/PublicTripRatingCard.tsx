@@ -1,64 +1,35 @@
 import React, { useState } from 'react';
-import { Star, CheckCircle2, Loader2, MessageSquare, Sparkles, AlertCircle } from 'lucide-react';
+import {
+  Star,
+  CheckCircle2,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  AlertCircle,
+  Lock,
+} from 'lucide-react';
 import { TripRequest } from '../../types';
 import { TripService } from '../../services/tripService';
 import { safeFormatDate } from '../../utils/dateUtils';
 
 interface PublicTripRatingCardProps {
   trip: TripRequest;
-  onRated: (
-    tripId: string,
-    rating: {
-      rating_overall: number;
-      rating_punctuality: number;
-      rating_vehicle: number;
-      rating_driver: number;
-      rating_comment?: string;
-      rated_at: string;
-    }
-  ) => void;
+  onSentCountUpdated?: (tripId: string, newSentCount: number) => void;
 }
 
-const StarRow: React.FC<{
-  label: string;
-  value: number;
-  onChange: (val: number) => void;
-}> = ({ label, value, onChange }) => (
-  <div className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200/90">
-    <span className="text-xs font-bold text-slate-700">{label}</span>
-    <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          key={n}
-          type="button"
-          onClick={() => onChange(n)}
-          className="p-0.5 transition-transform hover:scale-110 focus:outline-none"
-          aria-label={`${label}: ${n} de 5 estrelas`}
-        >
-          <Star
-            className={`w-5 h-5 transition-colors ${
-              n <= value
-                ? 'fill-amber-400 text-amber-500'
-                : 'fill-slate-100 text-slate-300 hover:text-amber-300'
-            }`}
-          />
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
-export const PublicTripRatingCard: React.FC<PublicTripRatingCardProps> = ({ trip, onRated }) => {
-  const [isOpenForm, setIsOpenForm] = useState(false);
-  const [punctuality, setPunctuality] = useState<number>(5);
-  const [vehicle, setVehicle] = useState<number>(5);
-  const [driver, setDriver] = useState<number>(5);
-  const [comment, setComment] = useState('');
-  const [raterName, setRaterName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+export const PublicTripRatingCard: React.FC<PublicTripRatingCardProps> = ({
+  trip,
+  onSentCountUpdated,
+}) => {
+  const [sentCount, setSentCount] = useState<number>(Number(trip.rating_link_sent_count || 0));
+  const [isSending, setIsSending] = useState(false);
+  const [maskedEmail, setMaskedEmail] = useState<string>('');
+  const [successMsg, setSuccessMsg] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
   const alreadyRated = Boolean(trip.rating_overall && trip.rated_at);
+  const limitReached = sentCount >= 3;
+  const missingEmail = trip.has_requester_email === false;
 
   if (alreadyRated) {
     const overall = Number(trip.rating_overall || 0);
@@ -104,139 +75,109 @@ export const PublicTripRatingCard: React.FC<PublicTripRatingCardProps> = ({ trip
     );
   }
 
-  const avgPreview = ((punctuality + vehicle + driver) / 3).toFixed(1);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequestLink = async () => {
     setErrorMsg('');
-    setIsSubmitting(true);
+    setSuccessMsg('');
+    setIsSending(true);
 
-    const res = await TripService.submitPublicTripRating({
-      tripId: trip.id,
-      processNumber: trip.process_number,
-      punctuality,
-      vehicle,
-      driver,
-      comment,
-      raterName,
-    });
+    const res = await TripService.requestPublicRatingEmailLink(trip.id, trip.process_number);
+    setIsSending(false);
 
-    setIsSubmitting(false);
-
-    if (!res.ok || !res.rating) {
-      setErrorMsg(res.error || 'Não foi possível enviar a avaliação.');
+    if (!res.ok) {
+      if (typeof res.sentCount === 'number') {
+        setSentCount(res.sentCount);
+        onSentCountUpdated?.(trip.id, res.sentCount);
+      }
+      setErrorMsg(res.error || 'Não foi possível enviar o link de avaliação.');
       return;
     }
 
-    onRated(trip.id, res.rating);
-    setIsOpenForm(false);
+    const updatedCount = typeof res.sentCount === 'number' ? res.sentCount : sentCount + 1;
+    setSentCount(updatedCount);
+    onSentCountUpdated?.(trip.id, updatedCount);
+    setMaskedEmail(res.maskedEmail || 'o e-mail cadastrado');
+    setSuccessMsg(
+      `Link exclusivo enviado para ${res.maskedEmail || 'o e-mail cadastrado na solicitação'}! Verifique sua caixa de entrada ou spam.`
+    );
   };
 
   return (
     <div className="bg-gradient-to-br from-amber-50/80 to-white border border-amber-200/90 rounded-2xl p-4 space-y-3 text-xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div className="space-y-0.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
           <div className="flex items-center gap-1.5 font-extrabold text-navy-950">
-            <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-            <span>Como foi a experiência nesta viagem?</span>
+            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Avaliar Experiência da Viagem</span>
           </div>
-          <p className="text-[11px] text-slate-600">
-            Avalie em 10 segundos a pontualidade, o veículo e o atendimento do motorista (sem precisar de login).
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            Por segurança, o link exclusivo de avaliação é enviado diretamente para o{' '}
+            <strong>e-mail do solicitante cadastrado no pedido</strong> (máximo de 3 envios por viagem).
           </p>
         </div>
 
-        {!isOpenForm && (
+        <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={() => setIsOpenForm(true)}
-            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 shrink-0 transition-colors"
+            disabled={isSending || limitReached || missingEmail}
+            onClick={handleRequestLink}
+            className={`px-3.5 py-2.5 rounded-xl font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-colors ${
+              limitReached || missingEmail
+                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                : 'bg-amber-600 hover:bg-amber-700 text-white'
+            }`}
           >
-            <Star className="w-3.5 h-3.5 fill-white" />
-            <span>Avaliar Viagem</span>
+            {isSending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Enviando e-mail...</span>
+              </>
+            ) : limitReached ? (
+              <>
+                <Lock className="w-3.5 h-3.5" />
+                <span>Limite de 3 envios atingido</span>
+              </>
+            ) : (
+              <>
+                <Mail className="w-3.5 h-3.5" />
+                <span>{sentCount > 0 ? 'Reenviar Link por E-mail' : 'Enviar Link de Avaliação'}</span>
+              </>
+            )}
           </button>
-        )}
+
+          <span className="text-[10px] font-bold text-slate-500">
+            Envios utilizados: <strong className={limitReached ? 'text-rose-600' : 'text-navy-950'}>{sentCount} / 3</strong>
+          </span>
+        </div>
       </div>
 
-      {isOpenForm && (
-        <form onSubmit={handleSubmit} className="space-y-3 pt-2 border-t border-amber-200/70">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <StarRow label="Pontualidade" value={punctuality} onChange={setPunctuality} />
-            <StarRow label="Veículo / Conforto" value={vehicle} onChange={setVehicle} />
-            <StarRow label="Motorista" value={driver} onChange={setDriver} />
-          </div>
+      {missingEmail && (
+        <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-[11px] flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-slate-500 shrink-0" />
+          <span>
+            Esta solicitação não possui e-mail do solicitante cadastrado. Solicite a atualização à DIVTRANS para habilitar a avaliação.
+          </span>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="sm:col-span-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1 mb-1">
-                <MessageSquare className="w-3 h-3" />
-                <span>Comentário ou sugestão (opcional)</span>
-              </label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                maxLength={500}
-                rows={2}
-                placeholder="Ex.: Motorista muito educado, veículo limpo e saída no horário..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                Seu nome (opcional)
-              </label>
-              <input
-                type="text"
-                value={raterName}
-                onChange={(e) => setRaterName(e.target.value)}
-                maxLength={120}
-                placeholder="Ex.: Prof. João / Passageiro"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-              <div className="mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-100/70 text-[11px] font-extrabold text-amber-950">
-                <span>Nota Geral:</span>
-                <span>{avgPreview} / 5.0 ★</span>
+      {successMsg && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-semibold flex items-start gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div>
+            <div>{successMsg}</div>
+            {maskedEmail && (
+              <div className="text-[10px] text-emerald-700 font-normal mt-0.5">
+                Restam {Math.max(0, 3 - sentCount)} {3 - sentCount === 1 ? 'envio disponível' : 'envios disponíveis'} para este processo.
               </div>
-            </div>
+            )}
           </div>
+        </div>
+      )}
 
-          {errorMsg && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpenForm(false);
-                setErrorMsg('');
-              }}
-              className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 rounded-xl bg-navy-950 hover:bg-navy-900 disabled:opacity-60 text-white font-extrabold text-xs shadow-sm flex items-center gap-1.5 transition-colors"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Enviando...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Enviar Avaliação</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+      {errorMsg && (
+        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
       )}
     </div>
   );

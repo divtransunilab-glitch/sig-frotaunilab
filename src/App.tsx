@@ -28,6 +28,7 @@ import { AuditView } from './components/audit/AuditView';
 import { ReportsView } from './components/reports/ReportsView';
 import { TutorialView } from './components/help/TutorialView';
 import { PublicPortal } from './components/public/PublicPortal';
+import { PublicRatingPage } from './components/public/PublicRatingPage';
 import { DriverTripView } from './components/driver/DriverTripView';
 import { AuditService } from './services/auditService';
 import { supabase } from './services/supabaseClient';
@@ -36,6 +37,18 @@ import { getDriverTripIdFromUrl } from './utils/driverLinkUtils';
 export function App() {
   // Modo Mobile do Motorista (?motorista=<tripId>) — acesso direto via Link/QR Code sem login
   const [driverTripId, setDriverTripId] = useState<string | null>(() => getDriverTripIdFromUrl());
+
+  // Modo Avaliação Exclusiva via Link de E-mail (?avaliar=<tripId>&rt=<token>)
+  const [ratingParams, setRatingParams] = useState<{ tripId: string; token: string } | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tripId = params.get('avaliar')?.trim() || '';
+      const token = params.get('rt')?.trim() || '';
+      return tripId ? { tripId, token } : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Controle de Autenticação validado pela sessão JWT real do Supabase Auth
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -430,6 +443,24 @@ export function App() {
   const reportPendingCount = trips.filter(
     (t) => t.travel_report_status === 'Aguardando a Apreciação do Gerente'
   ).length;
+
+  // MODO AVALIAÇÃO EXCLUSIVA VIA LINK DE E-MAIL (?avaliar=<tripId>&rt=<token>)
+  if (ratingParams) {
+    return (
+      <PublicRatingPage
+        tripId={ratingParams.tripId}
+        ratingToken={ratingParams.token}
+        onExitRatingMode={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('avaliar');
+          url.searchParams.delete('rt');
+          window.history.replaceState({}, '', url.toString());
+          setRatingParams(null);
+          loadTrips();
+        }}
+      />
+    );
+  }
 
   // MODO MOTORISTA (Link / QR Code da Ordem de Tráfego Digital)
   if (driverTripId) {

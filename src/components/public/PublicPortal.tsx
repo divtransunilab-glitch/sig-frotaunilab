@@ -537,19 +537,16 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                           </div>
                         )}
 
-                        {/* Avaliação de Satisfação pelo Solicitante (liberada após conclusão da viagem confirmada) */}
+                        {/* Avaliação de Satisfação via Link Seguro por E-mail (máx. 3 envios) */}
                         {isEligibleForRating && (
                           <PublicTripRatingCard
                             trip={trip}
-                            onRated={(ratedTripId, rating) => {
+                            onSentCountUpdated={(ratedTripId, newSentCount) => {
                               setSearchResults((prev) =>
                                 prev.map((item) =>
-                                  item.id === ratedTripId ? { ...item, ...rating } : item
-                                )
-                              );
-                              setAllTrips((prev) =>
-                                prev.map((item) =>
-                                  item.id === ratedTripId ? { ...item, ...rating } : item
+                                  item.id === ratedTripId
+                                    ? { ...item, rating_link_sent_count: newSentCount }
+                                    : item
                                 )
                               );
                             }}

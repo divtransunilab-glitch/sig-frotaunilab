@@ -1251,11 +1251,90 @@ export class TripService {
   }
 
   /**
-   * Envia avaliação de satisfação da viagem pelo Portal Público via RPC segura (SECURITY DEFINER)
+   * Solicita o envio do link exclusivo de avaliação para o e-mail cadastrado na solicitação (máx. 3 envios).
+   * O envio é feito pelo servidor (/api/send-rating-link) sem expor o e-mail real nem o token ao navegador.
+   */
+  static async requestPublicRatingEmailLink(
+    tripId: string,
+    processNumber: string
+  ): Promise<{
+    ok: boolean;
+    maskedEmail?: string;
+    sentCount?: number;
+    remainingSends?: number;
+    limitReached?: boolean;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/send-rating-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tripId, processNumber }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        return {
+          ok: false,
+          limitReached: Boolean(data?.limit_reached),
+          sentCount: typeof data?.sent_count === 'number' ? data.sent_count : undefined,
+          error: data?.error || 'Não foi possível enviar o link de avaliação por e-mail.',
+        };
+      }
+
+      return {
+        ok: true,
+        maskedEmail: data.masked_email,
+        sentCount: data.sent_count,
+        remainingSends: data.remaining_sends,
+      };
+    } catch {
+      return {
+        ok: false,
+        error: 'Erro de conexão com o servidor de envio de e-mail.',
+      };
+    }
+  }
+
+  /**
+   * Carrega os dados seguros de uma viagem para a página exclusiva de avaliação (?avaliar=<id>&rt=<token>)
+   */
+  static async fetchTripForRating(
+    tripId: string,
+    ratingToken: string
+  ): Promise<{
+    status: 'ok' | 'already_rated' | 'invalid_token' | 'not_found' | 'error';
+    trip?: Partial<TripRequest> & { driver_public_name?: string };
+  }> {
+    try {
+      const { data, error } = await supabase.rpc('get_trip_for_rating', {
+        p_trip_id: tripId,
+        p_rating_token: ratingToken,
+      });
+
+      if (error || !data || typeof data !== 'object') {
+        return { status: 'error' };
+      }
+
+      const res = data as any;
+      if (res.status === 'ok' || res.status === 'already_rated') {
+        return { status: res.status, trip: res.trip };
+      }
+      if (res.status === 'invalid_token' || res.status === 'not_found') {
+        return { status: res.status };
+      }
+      return { status: 'error' };
+    } catch {
+      return { status: 'error' };
+    }
+  }
+
+  /**
+   * Envia avaliação de satisfação da viagem exigindo o token exclusivo recebido por e-mail
    */
   static async submitPublicTripRating(params: {
     tripId: string;
-    processNumber: string;
+    ratingToken: string;
     punctuality: number;
     vehicle: number;
     driver: number;
@@ -1276,7 +1355,7 @@ export class TripService {
     try {
       const { data, error } = await supabase.rpc('submit_public_trip_rating', {
         p_trip_id: params.tripId,
-        p_process_number: params.processNumber,
+        p_rating_token: params.ratingToken,
         p_punctuality: params.punctuality,
         p_vehicle: params.vehicle,
         p_driver: params.driver,
@@ -1308,7 +1387,6 @@ export class TripService {
         rated_at: res.rated_at || new Date().toISOString(),
       };
 
-      // Atualiza cache local se a viagem estiver armazenada localmente
       const local = this.loadTrips();
       const idx = local.findIndex((t) => t.id === params.tripId);
       if (idx !== -1) {

@@ -183,6 +183,8 @@ export interface TripRequest {
   rating_comment?: string; // Comentário opcional do solicitante
   rated_at?: string; // Data/hora da avaliação
   rated_by_name?: string; // Nome opcional de quem avaliou
+  rating_link_sent_count?: number; // Quantidade de envios de link de avaliação por e-mail (máx. 3)
+  has_requester_email?: boolean; // Flag booleana segura (nunca expõe o e-mail no portal público)
   notes?: string;
   created_at: string;
   updated_at: string;

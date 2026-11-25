@@ -1,9 +1,11 @@
 -- ============================================================================
--- SIG-FROTA UNILAB — Avaliação de Satisfação da Viagem pelo Solicitante (Portal Público)
+-- SIG-FROTA UNILAB — Avaliação de Satisfação via Link Seguro por E-mail (Máx. 3 envios)
 -- Execute este script no SQL Editor do Supabase (https://supabase.com/dashboard)
 -- ============================================================================
 
--- 1. COLUNAS DE AVALIAÇÃO NA TABELA trip_requests
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 1. COLUNAS DE AVALIAÇÃO E CONTROLE DE ENVIO NA TABELA trip_requests
 ALTER TABLE public.trip_requests
   ADD COLUMN IF NOT EXISTS rating_overall numeric(2,1),
   ADD COLUMN IF NOT EXISTS rating_punctuality integer,
@@ -11,9 +13,12 @@ ALTER TABLE public.trip_requests
   ADD COLUMN IF NOT EXISTS rating_driver integer,
   ADD COLUMN IF NOT EXISTS rating_comment text,
   ADD COLUMN IF NOT EXISTS rated_at timestamptz,
-  ADD COLUMN IF NOT EXISTS rated_by_name text;
+  ADD COLUMN IF NOT EXISTS rated_by_name text,
+  ADD COLUMN IF NOT EXISTS rating_token text,
+  ADD COLUMN IF NOT EXISTS rating_link_sent_count integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_link_last_sent_at timestamptz;
 
--- 2. ATUALIZAR RPC DO PAINEL DE TRANSPARÊNCIA PARA INCLUIR AS NOTAS AGREGÁVEIS (SEM DADOS PESSOAIS)
+-- 2. ATUALIZAR RPC DO PAINEL DE TRANSPARÊNCIA (AGREGADO / ANÔNIMO — LGPD)
 DROP FUNCTION IF EXISTS public.get_public_transparency_trips();
 
 CREATE OR REPLACE FUNCTION public.get_public_transparency_trips()
@@ -89,7 +94,7 @@ $$;
 REVOKE ALL ON FUNCTION public.get_public_transparency_trips() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_public_transparency_trips() TO anon, authenticated;
 
--- 3. ATUALIZAR RPC DE CONSULTA PÚBLICA PARA RETORNAR SE A VIAGEM JÁ FOI AVALIADA
+-- 3. ATUALIZAR RPC DE CONSULTA PÚBLICA (NUNCA EXPÕE E-MAIL NEM rating_token)
 CREATE OR REPLACE FUNCTION public.search_public_trip(p_query text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -140,6 +145,8 @@ BEGIN
         'rating_driver', t.rating_driver,
         'rating_comment', t.rating_comment,
         'rated_at', t.rated_at,
+        'rating_link_sent_count', coalesce(t.rating_link_sent_count, 0),
+        'has_requester_email', (trim(coalesce(t.requester_email, '')) LIKE '%@%.%'),
         'created_at', t.created_at,
         'updated_at', t.updated_at
       )
@@ -168,10 +175,186 @@ $$;
 REVOKE ALL ON FUNCTION public.search_public_trip(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.search_public_trip(text) TO anon, authenticated;
 
--- 4. RPC SEGURA PARA ENVIAR AVALIAÇÃO DE SATISFAÇÃO PELO PORTAL PÚBLICO
+-- 4. RPC EXCLUSIVA DO SERVIDOR (service_role) PARA GERAR TOKEN E CONTROLAR LIMITE DE 3 ENVIOS
+CREATE OR REPLACE FUNCTION public.issue_trip_rating_token(
+  p_trip_id text,
+  p_process_number text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_trip public.trip_requests%ROWTYPE;
+  v_now timestamptz := now();
+  v_email text;
+  v_local_part text;
+  v_domain_part text;
+  v_masked_email text;
+  v_token text;
+  v_new_count integer;
+BEGIN
+  SELECT * INTO v_trip
+  FROM public.trip_requests
+  WHERE id = p_trip_id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Viagem não encontrada.');
+  END IF;
+
+  IF trim(coalesce(v_trip.process_number, '')) <> trim(coalesce(p_process_number, '')) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Número do processo não confere.');
+  END IF;
+
+  IF v_trip.status <> 'Confirmado ao Demandante' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Apenas viagens confirmadas e concluídas podem ser avaliadas.');
+  END IF;
+
+  IF v_trip.driver_checkout_at IS NULL
+     AND coalesce(v_trip.travel_report_status, '') NOT IN ('Finalizado no Sistema', 'Aguardando a Apreciação do Gerente')
+     AND v_trip.return_datetime > v_now THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'A avaliação é liberada somente após a conclusão da viagem.');
+  END IF;
+
+  IF v_trip.rated_at IS NOT NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Esta viagem já foi avaliada anteriormente.');
+  END IF;
+
+  v_email := lower(trim(coalesce(v_trip.requester_email, '')));
+  IF v_email = '' OR position('@' in v_email) <= 1 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Esta solicitação não possui um e-mail de solicitante cadastrado. Solicite à DIVTRANS a atualização do e-mail.');
+  END IF;
+
+  -- LIMITE MÁXIMO DE 3 ENVIOS POR VIAGEM
+  IF coalesce(v_trip.rating_link_sent_count, 0) >= 3 THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'limit_reached', true,
+      'sent_count', v_trip.rating_link_sent_count,
+      'error', 'Limite máximo de 3 envios de link por e-mail já foi atingido para esta viagem. Verifique sua caixa de entrada ou spam.'
+    );
+  END IF;
+
+  -- Gera token único (ou reaproveita se já existir, garantindo que links anteriores no e-mail continuem válidos)
+  v_token := coalesce(nullif(trim(v_trip.rating_token), ''), encode(gen_random_bytes(24), 'hex'));
+  v_new_count := coalesce(v_trip.rating_link_sent_count, 0) + 1;
+
+  UPDATE public.trip_requests
+  SET
+    rating_token = v_token,
+    rating_link_sent_count = v_new_count,
+    rating_link_last_sent_at = v_now,
+    updated_at = v_now
+  WHERE id = p_trip_id;
+
+  -- Mascara o e-mail para exibição segura na tela pública (ex: j***@unilab.edu.br)
+  v_local_part := split_part(v_email, '@', 1);
+  v_domain_part := split_part(v_email, '@', 2);
+  v_masked_email := left(v_local_part, LEAST(2, length(v_local_part))) || '***@' || v_domain_part;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'email', v_email,
+    'masked_email', v_masked_email,
+    'requester_name', v_trip.requester_name,
+    'process_number', v_trip.process_number,
+    'origin_city_id', v_trip.origin_city_id,
+    'destination_city_id', v_trip.destination_city_id,
+    'departure_datetime', v_trip.departure_datetime,
+    'rating_token', v_token,
+    'sent_count', v_new_count,
+    'remaining_sends', GREATEST(0, 3 - v_new_count)
+  );
+END;
+$$;
+
+-- APENAS o servidor (service_role) pode chamar esta função — NUNCA o navegador!
+REVOKE ALL ON FUNCTION public.issue_trip_rating_token(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.issue_trip_rating_token(text, text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.issue_trip_rating_token(text, text) TO service_role;
+
+-- 5. RPC PÚBLICA PARA ABRIR A PÁGINA DE AVALIAÇÃO COM VALIDAÇÃO DO TOKEN DO E-MAIL
+CREATE OR REPLACE FUNCTION public.get_trip_for_rating(
+  p_trip_id text,
+  p_rating_token text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_trip public.trip_requests%ROWTYPE;
+  v_driver_name text;
+BEGIN
+  SELECT * INTO v_trip
+  FROM public.trip_requests
+  WHERE id = p_trip_id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'not_found');
+  END IF;
+
+  IF v_trip.rated_at IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'status', 'already_rated',
+      'trip', jsonb_build_object(
+        'id', v_trip.id,
+        'process_number', v_trip.process_number,
+        'macro_unit', v_trip.macro_unit,
+        'origin_city_id', v_trip.origin_city_id,
+        'destination_city_id', v_trip.destination_city_id,
+        'departure_datetime', v_trip.departure_datetime,
+        'rating_overall', v_trip.rating_overall,
+        'rating_punctuality', v_trip.rating_punctuality,
+        'rating_vehicle', v_trip.rating_vehicle,
+        'rating_driver', v_trip.rating_driver,
+        'rating_comment', v_trip.rating_comment,
+        'rated_at', v_trip.rated_at
+      )
+    );
+  END IF;
+
+  IF coalesce(trim(v_trip.rating_token), '') = ''
+     OR trim(coalesce(p_rating_token, '')) <> trim(v_trip.rating_token) THEN
+    RETURN jsonb_build_object('status', 'invalid_token');
+  END IF;
+
+  SELECT d.name INTO v_driver_name
+  FROM public.drivers d
+  WHERE d.id = v_trip.allocated_driver_id;
+
+  RETURN jsonb_build_object(
+    'status', 'ok',
+    'trip', jsonb_build_object(
+      'id', v_trip.id,
+      'process_number', v_trip.process_number,
+      'requester_name', v_trip.requester_name,
+      'macro_unit', v_trip.macro_unit,
+      'requesting_unit', v_trip.requesting_unit,
+      'origin_city_id', v_trip.origin_city_id,
+      'destination_city_id', v_trip.destination_city_id,
+      'departure_datetime', v_trip.departure_datetime,
+      'return_datetime', v_trip.return_datetime,
+      'allocated_vehicle_id', v_trip.allocated_vehicle_id,
+      'driver_public_name', v_driver_name
+    )
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_trip_for_rating(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_trip_for_rating(text, text) TO anon, authenticated;
+
+-- 6. RPC SEGURA PARA ENVIAR AVALIAÇÃO EXIGINDO O TOKEN EXCLUSIVO DO E-MAIL
+DROP FUNCTION IF EXISTS public.submit_public_trip_rating(text, text, integer, integer, integer, text, text);
+
 CREATE OR REPLACE FUNCTION public.submit_public_trip_rating(
   p_trip_id text,
-  p_process_number text,
+  p_rating_token text,
   p_punctuality integer,
   p_vehicle integer,
   p_driver integer,
@@ -205,23 +388,14 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'Viagem não encontrada.');
   END IF;
 
-  -- Confirmação do número do processo para evitar envio aleatório por ID
-  IF trim(coalesce(v_trip.process_number, '')) <> trim(coalesce(p_process_number, '')) THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Número do processo não confere.');
-  END IF;
-
-  IF v_trip.status <> 'Confirmado ao Demandante' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Apenas viagens confirmadas e concluídas podem ser avaliadas.');
-  END IF;
-
-  IF v_trip.driver_checkout_at IS NULL
-     AND coalesce(v_trip.travel_report_status, '') NOT IN ('Finalizado no Sistema', 'Aguardando a Apreciação do Gerente')
-     AND v_trip.return_datetime > v_now THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'A avaliação é liberada somente após a conclusão da viagem.');
-  END IF;
-
   IF v_trip.rated_at IS NOT NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'Esta viagem já foi avaliada anteriormente.');
+  END IF;
+
+  -- EXIGE TOKEN VÁLIDO ENVIADO AO E-MAIL DO SOLICITANTE
+  IF coalesce(trim(v_trip.rating_token), '') = ''
+     OR trim(coalesce(p_rating_token, '')) <> trim(v_trip.rating_token) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'Link de avaliação inválido ou expirado. Solicite um novo link pelo Portal Público.');
   END IF;
 
   v_overall := round(((p_punctuality + p_vehicle + p_driver)::numeric / 3.0), 1);
@@ -235,6 +409,7 @@ BEGIN
     rating_comment = NULLIF(v_clean_comment, ''),
     rated_at = v_now,
     rated_by_name = NULLIF(v_clean_rater, ''),
+    rating_token = NULL, -- Link de uso único: invalida após avaliar
     updated_at = v_now
   WHERE id = p_trip_id;
 
