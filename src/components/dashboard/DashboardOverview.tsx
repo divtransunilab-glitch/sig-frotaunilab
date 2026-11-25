@@ -4,6 +4,7 @@ import { TripService } from '../../services/tripService';
 import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
 import { StatusBadge } from '../common/StatusBadge';
+import { MacroUnitInsightsDrawer } from './MacroUnitInsightsDrawer';
 import { 
   SendHorizontal, 
   CheckCircle2, 
@@ -15,6 +16,7 @@ import {
   Building2, 
   Users, 
   ArrowRight, 
+  ChevronRight,
   PlusCircle, 
   Truck, 
   Sparkles,
@@ -53,6 +55,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [selectedYear, setSelectedYear] = useState<string>(currentYearNum.toString());
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthIdx.toString());
   const [queueTab, setQueueTab] = useState<'immediate' | 'upcoming' | 'overdue'>('immediate');
+  const [selectedMacroUnit, setSelectedMacroUnit] = useState<string | null>(null);
 
   // Lista dos 12 meses do ano + Opção Consolidada
   const monthsList = [
@@ -875,31 +878,47 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Distribution / Macro Units & Activity (1 Column) */}
         <div className="space-y-6">
           
-          {/* Por Unidade Macro */}
+          {/* Por Unidade Macro (clicável -> abre Drawer lateral fluido de Raio-X da Unidade) */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-3">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <Building2 className="w-4 h-4 text-brand-600" />
-              Demandas por Unidade Macro
-            </h3>
-            <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-brand-600" />
+                Demandas por Unidade Macro
+              </h3>
+              <span className="text-[10px] font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200">
+                Clique p/ detalhar
+              </span>
+            </div>
+            <div className="space-y-1.5 pt-1">
               {Object.entries(metrics.byMacroUnit).length === 0 ? (
                 <div className="text-xs text-slate-400 py-3 text-center">Sem dados no período</div>
               ) : (
                 Object.entries(metrics.byMacroUnit).map(([unit, count]) => {
                   const pct = Math.round((count / (metrics.totalRequests || 1)) * 100);
                   return (
-                    <div key={unit} className="space-y-1">
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => setSelectedMacroUnit(unit)}
+                      className="w-full text-left p-2 -mx-2 rounded-xl hover:bg-brand-50/60 transition-all group space-y-1.5 cursor-pointer"
+                      title={`Abrir raio-x completo da unidade ${unit}`}
+                    >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-700">{unit}</span>
-                        <span className="text-slate-500">{count} ({pct}%)</span>
+                        <span className="font-bold text-slate-800 group-hover:text-brand-700 flex items-center gap-1 transition-colors">
+                          <span>{unit}</span>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-all" />
+                        </span>
+                        <span className="text-slate-500 font-semibold group-hover:text-navy-950">
+                          {count} ({pct}%)
+                        </span>
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-brand-500 h-1.5 rounded-full transition-all duration-500"
+                          className="bg-brand-500 group-hover:bg-brand-600 h-1.5 rounded-full transition-all duration-500"
                           style={{ width: `${pct}%` }}
                         ></div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })
               )}
@@ -990,6 +1009,27 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Painel Deslizante (Drawer) com Raio-X Completo da Unidade Macro */}
+      <MacroUnitInsightsDrawer
+        selectedUnit={selectedMacroUnit}
+        availableUnits={Object.keys(metrics.byMacroUnit)}
+        scopedTrips={scopedTrips}
+        allTrips={trips}
+        periodLabel={
+          selectedMonth === 'ALL'
+            ? selectedYear === 'ALL'
+              ? 'Todos os Anos'
+              : `Ano ${selectedYear}`
+            : `${monthsList.find((m) => m.id === selectedMonth)?.label || ''} / ${selectedYear === 'ALL' ? 'Todos' : selectedYear}`
+        }
+        onSelectUnit={(u) => setSelectedMacroUnit(u)}
+        onClose={() => setSelectedMacroUnit(null)}
+        onSelectTripDetail={(trip) => {
+          setSelectedMacroUnit(null);
+          onSelectTripDetail(trip);
+        }}
+      />
 
     </div>
   );
