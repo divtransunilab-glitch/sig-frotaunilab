@@ -157,6 +157,47 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
       });
     }
 
+    // Evolução Mensal (Jan..Dez) para o ano selecionado (respeitando filtro de finalidade)
+    const monthlyEvolution = MONTH_NAMES.map((name, monthIdx) => {
+      const mTrips = trips.filter((t) => {
+        try {
+          const d = parseISO(t.departure_datetime);
+          if (!isValid(d)) return false;
+          if (selectedYear !== 'ALL' && getYear(d).toString() !== selectedYear) return false;
+          if (selectedActivity !== 'ALL' && t.activity_type !== selectedActivity) return false;
+          return getMonth(d) === monthIdx;
+        } catch {
+          return false;
+        }
+      });
+
+      const mConfirmed = mTrips.filter((t) => t.status === 'Confirmado ao Demandante').length;
+      const mRejected = mTrips.filter((t) => t.status === 'Indeferido').length;
+      const mCancelled = mTrips.filter(
+        (t) =>
+          t.status === 'Cancelado pelo Demandante' ||
+          t.status === 'Cancelado pela Unidade Executante'
+      ).length;
+      const mPending = mTrips.filter((t) => t.status === 'Pendente de Análise').length;
+      const mKm = mTrips
+        .filter((t) => t.status === 'Confirmado ao Demandante')
+        .reduce((acc, t) => acc + (t.real_km && t.real_km > 0 ? t.real_km : t.estimated_km || 0), 0);
+
+      return {
+        monthIdx,
+        shortName: name.slice(0, 3),
+        fullName: name,
+        total: mTrips.length,
+        confirmed: mConfirmed,
+        rejected: mRejected,
+        cancelled: mCancelled,
+        pending: mPending,
+        km: Math.round(mKm),
+      };
+    });
+
+    const maxMonthlyTotal = Math.max(1, ...monthlyEvolution.map((m) => m.total));
+
     return {
       total,
       confirmed,
@@ -178,8 +219,10 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
       otherCount,
       otherKm,
       sortedRoutes,
+      monthlyEvolution,
+      maxMonthlyTotal,
     };
-  }, [filteredTrips]);
+  }, [filteredTrips, trips, selectedYear, selectedActivity]);
 
   const getActivityIcon = (act: string) => {
     switch (act) {
@@ -338,21 +381,21 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
           </div>
         </div>
 
-        {/* Indeferidas (Vermelho) */}
-        <div className="bg-white rounded-2xl p-5 border border-rose-200/80 shadow-card space-y-2 bg-gradient-to-b from-white to-rose-50/30">
+        {/* Indeferidas (Preto — padrão oficial) */}
+        <div className="bg-slate-900 rounded-2xl p-5 border border-slate-950 shadow-card space-y-2 text-white">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Indeferidas</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Indeferidas</span>
+            <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center font-bold">
               <XCircle className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-rose-700">{metrics.rejected}</span>
-            <span className="text-xs text-rose-800 font-bold bg-rose-100/80 px-2 py-0.5 rounded-md">
+            <span className="text-3xl font-black text-white">{metrics.rejected}</span>
+            <span className="text-xs text-slate-200 font-bold bg-white/15 px-2 py-0.5 rounded-md">
               {metrics.rejectionRate}%
             </span>
           </div>
-          <div className="text-[11px] text-rose-700 pt-2 border-t border-rose-100">
+          <div className="text-[11px] text-slate-300 pt-2 border-t border-white/10">
             Por indisponibilidade de veículo ou prazo
           </div>
         </div>
@@ -384,14 +427,15 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-card flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+        {/* Canceladas (Vermelho — padrão oficial) */}
+        <div className="bg-rose-50/60 rounded-2xl p-4 sm:p-5 border border-rose-200 shadow-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
             <Ban className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Demandas Canceladas</span>
-            <strong className="text-2xl font-black text-slate-800">{metrics.cancelled}</strong>
-            <span className="text-xs text-slate-500 ml-1">({metrics.cancellationRate}%)</span>
+            <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">Demandas Canceladas</span>
+            <strong className="text-2xl font-black text-rose-700">{metrics.cancelled}</strong>
+            <span className="text-xs text-rose-600 font-semibold ml-1">({metrics.cancellationRate}%)</span>
           </div>
         </div>
 
@@ -410,12 +454,12 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
               Em Análise: {metrics.pending} ({metrics.pendingRate}%)
             </span>
-            <span className="flex items-center gap-1.5 text-rose-700">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+            <span className="flex items-center gap-1.5 text-slate-900">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-900 inline-block"></span>
               Indeferidas: {metrics.rejected} ({metrics.rejectionRate}%)
             </span>
-            <span className="flex items-center gap-1.5 text-slate-600">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block"></span>
+            <span className="flex items-center gap-1.5 text-rose-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
               Canceladas: {metrics.cancelled} ({metrics.cancellationRate}%)
             </span>
           </div>
@@ -434,14 +478,91 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
           ></div>
           <div
             title={`Indeferidas: ${metrics.rejected} (${metrics.rejectionRate}%)`}
-            className="bg-rose-500 hover:bg-rose-600 transition-all duration-500"
+            className="bg-slate-900 hover:bg-slate-950 transition-all duration-500"
             style={{ width: `${metrics.rejectionRate}%` }}
           ></div>
           <div
             title={`Canceladas: ${metrics.cancelled} (${metrics.cancellationRate}%)`}
-            className="bg-slate-400 hover:bg-slate-500 transition-all duration-500"
+            className="bg-rose-500 hover:bg-rose-600 transition-all duration-500"
             style={{ width: `${metrics.cancellationRate}%` }}
           ></div>
+        </div>
+      </div>
+
+      {/* EVOLUÇÃO MENSAL (JAN - DEZ) */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="font-extrabold text-sm text-navy-950 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-brand-600" />
+              <span>Evolução Mensal das Solicitações ({selectedYear === 'ALL' ? 'Todos os Anos' : selectedYear})</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Clique em qualquer mês para filtrar os indicadores acima • Barras proporcionais por situação
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold">
+            <span className="flex items-center gap-1 text-emerald-700">
+              <span className="w-2 h-2 rounded-xs bg-emerald-500 inline-block" /> Atendidas
+            </span>
+            <span className="flex items-center gap-1 text-slate-900">
+              <span className="w-2 h-2 rounded-xs bg-slate-900 inline-block" /> Indeferidas
+            </span>
+            <span className="flex items-center gap-1 text-rose-700">
+              <span className="w-2 h-2 rounded-xs bg-rose-500 inline-block" /> Canceladas
+            </span>
+            <span className="flex items-center gap-1 text-amber-700">
+              <span className="w-2 h-2 rounded-xs bg-amber-400 inline-block" /> Em Análise
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2 pt-2 items-end">
+          {metrics.monthlyEvolution.map((m) => {
+            const isSelected = selectedMonth === m.monthIdx.toString();
+            const totalHeightPct = m.total > 0 ? Math.max(12, Math.round((m.total / metrics.maxMonthlyTotal) * 100)) : 4;
+            const confirmedPct = m.total > 0 ? (m.confirmed / m.total) * 100 : 0;
+            const rejectedPct = m.total > 0 ? (m.rejected / m.total) * 100 : 0;
+            const cancelledPct = m.total > 0 ? (m.cancelled / m.total) * 100 : 0;
+            const pendingPct = m.total > 0 ? (m.pending / m.total) * 100 : 0;
+
+            return (
+              <button
+                key={m.monthIdx}
+                type="button"
+                onClick={() =>
+                  setSelectedMonth((prev) => (prev === m.monthIdx.toString() ? 'ALL' : m.monthIdx.toString()))
+                }
+                title={`${m.fullName}: ${m.total} demandas (${m.confirmed} atendidas, ${m.rejected} indeferidas, ${m.cancelled} canceladas) • ${m.km.toLocaleString('pt-BR')} km`}
+                className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-brand-50 border-brand-400 ring-2 ring-brand-200'
+                    : 'bg-slate-50/50 border-slate-100 hover:bg-slate-100/80 hover:border-slate-300'
+                }`}
+              >
+                <span className="text-[11px] font-extrabold text-navy-950">{m.total}</span>
+                <div className="w-full max-w-[28px] h-28 bg-slate-200/70 rounded-lg overflow-hidden flex flex-col justify-end">
+                  {m.total > 0 && (
+                    <div
+                      className="w-full flex flex-col justify-end transition-all duration-500"
+                      style={{ height: `${totalHeightPct}%` }}
+                    >
+                      {pendingPct > 0 && <div className="w-full bg-amber-400" style={{ height: `${pendingPct}%` }} />}
+                      {cancelledPct > 0 && <div className="w-full bg-rose-500" style={{ height: `${cancelledPct}%` }} />}
+                      {rejectedPct > 0 && <div className="w-full bg-slate-900" style={{ height: `${rejectedPct}%` }} />}
+                      {confirmedPct > 0 && <div className="w-full bg-emerald-500" style={{ height: `${confirmedPct}%` }} />}
+                    </div>
+                  )}
+                </div>
+                <span className={`text-[11px] font-bold ${isSelected ? 'text-brand-800' : 'text-slate-600'}`}>
+                  {m.shortName}
+                </span>
+                <span className="text-[9px] font-semibold text-slate-400">
+                  {m.km > 0 ? `${m.km.toLocaleString('pt-BR')} km` : '-'}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

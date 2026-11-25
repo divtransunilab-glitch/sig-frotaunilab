@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TripRequest } from '../../types';
 import { TripService } from '../../services/tripService';
 import { DistanceService } from '../../services/distanceService';
@@ -50,8 +50,30 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   const [searchResults, setSearchResults] = useState<TripRequest[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Carrega todas as viagens para métricas de transparência
-  const allTrips = useMemo(() => TripService.getTrips(), []);
+  // Carrega todas as viagens diretamente do Supabase (com cache local imediato)
+  const [allTrips, setAllTrips] = useState<TripRequest[]>(() => TripService.getTrips());
+  const [isSyncingPublic, setIsSyncingPublic] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setIsSyncingPublic(true);
+    Promise.all([
+      TripService.fetchFromSupabase(),
+      FleetService.fetchVehiclesFromSupabase(),
+      FleetService.fetchDriversFromSupabase(),
+    ])
+      .then(([freshTrips]) => {
+        if (active && freshTrips && freshTrips.length > 0) {
+          setAllTrips(freshTrips);
+        }
+      })
+      .finally(() => {
+        if (active) setIsSyncingPublic(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Login Form State
   const [loginEmail, setLoginEmail] = useState('');
@@ -491,11 +513,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                           </div>
                         )}
 
-                        {/* Rejection Note */}
+                        {/* Rejection Note (Padrão Preto) */}
                         {isRejected && (
-                          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-900 space-y-1">
-                            <strong className="block font-bold text-rose-950">Motivo do Indeferimento: {trip.rejection_reason}</strong>
-                            {trip.rejection_notes && <p className="italic text-rose-800">{trip.rejection_notes}</p>}
+                          <div className="p-4 bg-slate-900 border border-slate-950 rounded-2xl text-xs text-white space-y-1">
+                            <strong className="block font-bold text-white">Motivo do Indeferimento: {trip.rejection_reason}</strong>
+                            {trip.rejection_notes && <p className="italic text-slate-300">{trip.rejection_notes}</p>}
                           </div>
                         )}
 
