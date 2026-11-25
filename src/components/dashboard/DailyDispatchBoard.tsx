@@ -551,6 +551,15 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
                   const theme = getStatusTheme(live);
                   const veh = getVehicle(trip.allocated_vehicle_id);
                   const drv = getDriver(trip.allocated_driver_id);
+                  const returnStartedAt = Array.isArray(trip.trip_legs)
+                    ? trip.trip_legs.find((l, idx) => idx > 0 && Boolean(l.started_at))?.started_at
+                    : undefined;
+                  const returnTimeFormatted = returnStartedAt
+                    ? safeFormatDate(returnStartedAt, 'HH:mm', '')
+                    : '';
+                  const checkinTimeFormatted = trip.driver_checkin_at
+                    ? safeFormatDate(trip.driver_checkin_at, 'HH:mm', '')
+                    : '';
                   const occupancyPct =
                     veh && veh.capacity > 0
                       ? Math.min(100, Math.round((trip.passenger_count / veh.capacity) * 100))
@@ -591,7 +600,14 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
                               }`}
                             >
                               <span className={`w-2 h-2 rounded-full ${theme.dot}`} />
-                              <span>{theme.label}</span>
+                              <span>
+                                {theme.label}
+                                {live === 'returning' && returnTimeFormatted
+                                  ? ` • ${returnTimeFormatted}`
+                                  : live === 'in_progress' && checkinTimeFormatted
+                                  ? ` • ${checkinTimeFormatted}`
+                                  : ''}
+                              </span>
                             </span>
                           </div>
 
@@ -744,9 +760,9 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
                               }`}
                             >
                               {live === 'returning'
-                                ? '↩ Retornando'
+                                ? `↩ Retornando${returnTimeFormatted ? ` ${returnTimeFormatted}` : ''}`
                                 : theme.stepIndex >= 3
-                                ? '✓ Retornou'
+                                ? `✓ Retornou${returnTimeFormatted ? ` ${returnTimeFormatted}` : ''}`
                                 : '2. Retorno'}
                             </div>
                             <div
