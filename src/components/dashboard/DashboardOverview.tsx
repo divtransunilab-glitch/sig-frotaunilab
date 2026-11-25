@@ -26,7 +26,7 @@ import {
   Filter,
   Gauge
 } from 'lucide-react';
-import { format, parseISO, getMonth, getYear, isValid } from 'date-fns';
+import { format, parseISO, getMonth, getYear, isValid, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { safeFormatDate } from '../../utils/dateUtils';
 
@@ -52,6 +52,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   // Ao iniciar o sistema, sempre abre no mês vigente!
   const [selectedYear, setSelectedYear] = useState<string>(currentYearNum.toString());
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthIdx.toString());
+  const [queueTab, setQueueTab] = useState<'immediate' | 'upcoming' | 'overdue'>('immediate');
 
   // Lista dos 12 meses do ano + Opção Consolidada
   const monthsList = [
@@ -188,12 +189,48 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     };
   }, [scopedTrips]);
 
-  // Fila de Escala e Viagens Confirmadas filtradas pelo escopo do mês selecionado/vigente
+  // Fila de Escala separada em 3 abas: Imediata (<= 3 dias), > 3 dias e Vencidas
   const pendingTrips = useMemo(() => {
     return scopedTrips
       .filter((t) => t.status === 'Pendente de Análise')
       .sort((a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime());
   }, [scopedTrips]);
+
+  const queueBuckets = useMemo(() => {
+    const today = new Date();
+    const immediate: Array<{ trip: TripRequest; daysUntil: number }> = [];
+    const upcoming: Array<{ trip: TripRequest; daysUntil: number }> = [];
+    const overdue: Array<{ trip: TripRequest; daysUntil: number }> = [];
+
+    pendingTrips.forEach((trip) => {
+      let daysUntil = 999;
+      try {
+        const d = parseISO(trip.departure_datetime);
+        if (isValid(d)) {
+          daysUntil = differenceInCalendarDays(d, today);
+        }
+      } catch {
+        // ignore
+      }
+
+      if (daysUntil < 0) {
+        overdue.push({ trip, daysUntil });
+      } else if (daysUntil <= 3) {
+        immediate.push({ trip, daysUntil });
+      } else {
+        upcoming.push({ trip, daysUntil });
+      }
+    });
+
+    return { immediate, upcoming, overdue };
+  }, [pendingTrips]);
+
+  const activeQueueItems =
+    queueTab === 'immediate'
+      ? queueBuckets.immediate
+      : queueTab === 'upcoming'
+      ? queueBuckets.upcoming
+      : queueBuckets.overdue;
 
   const recentConfirmed = useMemo(() => {
     return scopedTrips
@@ -668,47 +705,130 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           ></div>
           <div
             title={`Indeferidas: ${metrics.rejected} (${metrics.rejectionRate}%)`}
-            className="bg-rose-500 hover:bg-rose-600 transition-all duration-500"
+            className="bg-slate-900 hover:bg-slate-950 transition-all duration-500"
             style={{ width: `${metrics.rejectionRate}%` }}
           ></div>
           <div
             title={`Canceladas: ${metrics.cancelled} (${metrics.cancellationRate}%)`}
-            className="bg-slate-400 hover:bg-slate-500 transition-all duration-500"
+            className="bg-rose-500 hover:bg-rose-600 transition-all duration-500"
             style={{ width: `${metrics.cancellationRate}%` }}
           ></div>
         </div>
       </div>
 
-      {/* Main Grid: Pending Action Center + Analytics Breakdown */}
+      {/* Main Grid: Pending Action Center (3 Abas) + Analytics Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Urgent Action Center / Fila de Escala Imediata (2 Columns) */}
+        {/* Urgent Action Center / Fila de Escala com 3 Abas (2 Columns) */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></div>
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  queueTab === 'overdue'
+                    ? 'bg-rose-600 animate-ping'
+                    : queueTab === 'immediate'
+                    ? 'bg-amber-500 animate-ping'
+                    : 'bg-blue-500'
+                }`}
+              ></div>
               <h2 className="font-bold text-base text-slate-900">
-                Fila de Escala Imediata ({pendingTrips.length})
+                Fila de Escala ({pendingTrips.length})
               </h2>
             </div>
             <button
               onClick={() => onNavigateTab('dispatch')}
-              className="text-xs font-bold text-brand-700 hover:text-brand-800 flex items-center gap-1 group"
+              className="text-xs font-bold text-brand-700 hover:text-brand-800 flex items-center gap-1 group self-start sm:self-auto"
             >
               <span>Ver todas na fila</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
             </button>
           </div>
 
-          {pendingTrips.length === 0 ? (
+          {/* 3 Abas da Fila de Escala */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200/80 text-xs">
+            <button
+              type="button"
+              onClick={() => setQueueTab('immediate')}
+              className={`px-3 py-2 rounded-lg font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                queueTab === 'immediate'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+              }`}
+            >
+              <span>Imediata (≤ 3 dias)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  queueTab === 'immediate' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {queueBuckets.immediate.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setQueueTab('upcoming')}
+              className={`px-3 py-2 rounded-lg font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                queueTab === 'upcoming'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+              }`}
+            >
+              <span>Programada (&gt; 3 dias)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  queueTab === 'upcoming' ? 'bg-white/25 text-white' : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {queueBuckets.upcoming.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setQueueTab('overdue')}
+              className={`px-3 py-2 rounded-lg font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                queueTab === 'overdue'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+              }`}
+            >
+              <span>Vencidas</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  queueTab === 'overdue' ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-800'
+                }`}
+              >
+                {queueBuckets.overdue.length}
+              </span>
+            </button>
+          </div>
+
+          {activeQueueItems.length === 0 ? (
             <div className="py-10 text-center text-slate-400 text-xs">
               <CheckCircle2 className="w-8 h-8 text-brand-600 mx-auto mb-2 opacity-80" />
-              Nenhuma solicitação pendente no período selecionado! Todas as demandas foram escaladas.
+              {queueTab === 'immediate'
+                ? 'Nenhuma solicitação imediata (≤ 3 dias) pendente neste período!'
+                : queueTab === 'upcoming'
+                ? 'Nenhuma solicitação programada (> 3 dias) pendente neste período!'
+                : 'Nenhuma solicitação vencida pendente neste período!'}
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {pendingTrips.slice(0, 5).map((trip) => {
+            <div className="divide-y divide-slate-100 max-h-[460px] overflow-y-auto pr-1">
+              {activeQueueItems.slice(0, 8).map(({ trip, daysUntil }) => {
                 const departureFormatted = safeFormatDate(trip.departure_datetime, "dd/MM 'às' HH:mm", '-');
+                const daysBadge =
+                  daysUntil < 0
+                    ? { label: `Vencida há ${Math.abs(daysUntil)}d`, cls: 'bg-rose-100 text-rose-800 border-rose-200' }
+                    : daysUntil === 0
+                    ? { label: 'Saída HOJE', cls: 'bg-rose-600 text-white border-rose-700' }
+                    : daysUntil === 1
+                    ? { label: 'Amanhã (1d)', cls: 'bg-amber-500 text-white border-amber-600' }
+                    : daysUntil <= 3
+                    ? { label: `Em ${daysUntil} dias`, cls: 'bg-amber-100 text-amber-900 border-amber-200' }
+                    : { label: `Em ${daysUntil} dias`, cls: 'bg-blue-50 text-blue-700 border-blue-200' };
+
                 return (
                   <div key={trip.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 p-2 rounded-xl transition-colors">
                     <div className="space-y-1">
@@ -716,6 +836,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         <span className="font-bold text-xs text-navy-900">{trip.process_number}</span>
                         <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
                           {trip.macro_unit}
+                        </span>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${daysBadge.cls}`}>
+                          {daysBadge.label}
                         </span>
                         <StatusBadge deadline={trip.status_deadline} />
                       </div>
