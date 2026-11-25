@@ -1250,6 +1250,78 @@ export class TripService {
     }
   }
 
+  /**
+   * Envia avaliação de satisfação da viagem pelo Portal Público via RPC segura (SECURITY DEFINER)
+   */
+  static async submitPublicTripRating(params: {
+    tripId: string;
+    processNumber: string;
+    punctuality: number;
+    vehicle: number;
+    driver: number;
+    comment?: string;
+    raterName?: string;
+  }): Promise<{
+    ok: boolean;
+    error?: string;
+    rating?: {
+      rating_overall: number;
+      rating_punctuality: number;
+      rating_vehicle: number;
+      rating_driver: number;
+      rating_comment?: string;
+      rated_at: string;
+    };
+  }> {
+    try {
+      const { data, error } = await supabase.rpc('submit_public_trip_rating', {
+        p_trip_id: params.tripId,
+        p_process_number: params.processNumber,
+        p_punctuality: params.punctuality,
+        p_vehicle: params.vehicle,
+        p_driver: params.driver,
+        p_comment: params.comment?.trim() || null,
+        p_rater_name: params.raterName?.trim() || null,
+      });
+
+      if (error) {
+        return {
+          ok: false,
+          error:
+            error.message?.includes('submit_public_trip_rating')
+              ? 'A avaliação pública ainda precisa ser ativada no banco (migração SQL pendente).'
+              : error.message || 'Não foi possível registrar sua avaliação.',
+        };
+      }
+
+      const res = data as any;
+      if (!res || !res.ok) {
+        return { ok: false, error: res?.error || 'Não foi possível registrar sua avaliação.' };
+      }
+
+      const ratingPayload = {
+        rating_overall: Number(res.rating_overall),
+        rating_punctuality: Number(res.rating_punctuality),
+        rating_vehicle: Number(res.rating_vehicle),
+        rating_driver: Number(res.rating_driver),
+        rating_comment: res.rating_comment || undefined,
+        rated_at: res.rated_at || new Date().toISOString(),
+      };
+
+      // Atualiza cache local se a viagem estiver armazenada localmente
+      const local = this.loadTrips();
+      const idx = local.findIndex((t) => t.id === params.tripId);
+      if (idx !== -1) {
+        local[idx] = { ...local[idx], ...ratingPayload };
+        localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify(local));
+      }
+
+      return { ok: true, rating: ratingPayload };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || 'Erro de conexão ao enviar avaliação.' };
+    }
+  }
+
   static resetToDefaults(): void {
     localStorage.setItem(STORAGE_KEY_TRIPS, JSON.stringify([]));
   }

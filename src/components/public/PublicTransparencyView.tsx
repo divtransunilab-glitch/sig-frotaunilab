@@ -17,7 +17,8 @@ import {
   HeartHandshake, 
   Building2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Star
 } from 'lucide-react';
 import { parseISO, isValid, getYear, getMonth } from 'date-fns';
 
@@ -198,6 +199,28 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
 
     const maxMonthlyTotal = Math.max(1, ...monthlyEvolution.map((m) => m.total));
 
+    // Índice de Satisfação Agregado (Anônimo — LGPD)
+    const ratedTrips = filteredTrips.filter(
+      (t) => typeof t.rating_overall === 'number' && t.rating_overall > 0
+    );
+    const ratedCount = ratedTrips.length;
+    const avgOverall =
+      ratedCount > 0
+        ? Number((ratedTrips.reduce((acc, t) => acc + Number(t.rating_overall || 0), 0) / ratedCount).toFixed(1))
+        : 0;
+    const avgPunctuality =
+      ratedCount > 0
+        ? Number((ratedTrips.reduce((acc, t) => acc + Number(t.rating_punctuality || t.rating_overall || 0), 0) / ratedCount).toFixed(1))
+        : 0;
+    const avgVehicle =
+      ratedCount > 0
+        ? Number((ratedTrips.reduce((acc, t) => acc + Number(t.rating_vehicle || t.rating_overall || 0), 0) / ratedCount).toFixed(1))
+        : 0;
+    const avgDriver =
+      ratedCount > 0
+        ? Number((ratedTrips.reduce((acc, t) => acc + Number(t.rating_driver || t.rating_overall || 0), 0) / ratedCount).toFixed(1))
+        : 0;
+
     return {
       total,
       confirmed,
@@ -221,6 +244,11 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
       sortedRoutes,
       monthlyEvolution,
       maxMonthlyTotal,
+      ratedCount,
+      avgOverall,
+      avgPunctuality,
+      avgVehicle,
+      avgDriver,
     };
   }, [filteredTrips, trips, selectedYear, selectedActivity]);
 
@@ -677,6 +705,51 @@ export const PublicTransparencyView: React.FC<PublicTransparencyViewProps> = ({ 
         </div>
 
       </div>
+
+      {/* ÍNDICE DE SATISFAÇÃO PÚBLICA (AGREGADO — LGPD) */}
+      {metrics.ratedCount > 0 && (
+        <div className="bg-gradient-to-br from-amber-50/80 via-white to-white rounded-3xl border border-amber-200/90 shadow-card p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <Star className="w-5 h-5 fill-amber-400 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                  Índice de Satisfação dos Usuários do Transporte
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Média das avaliações anônimas registradas pelos solicitantes após viagens concluídas.
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-extrabold self-start sm:self-auto">
+              {metrics.ratedCount} {metrics.ratedCount === 1 ? 'avaliação' : 'avaliações'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-2xl bg-white border border-amber-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Nota Geral</span>
+              <div className="text-2xl font-black text-navy-950 mt-0.5">
+                {metrics.avgOverall.toFixed(1)} <span className="text-xs font-bold text-amber-600">/ 5.0 ★</span>
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Pontualidade</span>
+              <div className="text-xl font-black text-navy-950 mt-0.5">{metrics.avgPunctuality.toFixed(1)} ★</div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Veículo / Conforto</span>
+              <div className="text-xl font-black text-navy-950 mt-0.5">{metrics.avgVehicle.toFixed(1)} ★</div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Motorista</span>
+              <div className="text-xl font-black text-navy-950 mt-0.5">{metrics.avgDriver.toFixed(1)} ★</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SELO DE CONFORMIDADE LEGAL LAI & LGPD */}
       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-center gap-3.5 text-slate-600 text-xs">

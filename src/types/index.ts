@@ -176,6 +176,13 @@ export interface TripRequest {
   odometer_start?: number; // Hodômetro na saída
   odometer_end?: number; // Hodômetro no retorno
   trip_legs?: TripLeg[]; // Detalhamento de KM por trecho (Ida, Paradas, Retorno)
+  rating_overall?: number; // Média geral de satisfação (1.0 a 5.0)
+  rating_punctuality?: number; // Nota de pontualidade (1 a 5)
+  rating_vehicle?: number; // Nota de conforto / veículo (1 a 5)
+  rating_driver?: number; // Nota de atendimento do motorista (1 a 5)
+  rating_comment?: string; // Comentário opcional do solicitante
+  rated_at?: string; // Data/hora da avaliação
+  rated_by_name?: string; // Nome opcional de quem avaliou
   notes?: string;
   created_at: string;
   updated_at: string;

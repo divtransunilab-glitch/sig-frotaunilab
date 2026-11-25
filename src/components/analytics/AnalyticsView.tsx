@@ -27,7 +27,9 @@ import {
   Brain,
   Lightbulb,
   TrendingDown,
-  TrendingUp
+  TrendingUp,
+  Star,
+  MessageSquare
 } from 'lucide-react';
 import { parseISO, getMonth, getYear, getDay, isValid } from 'date-fns';
 import { safeFormatDate } from '../../utils/dateUtils';
@@ -163,6 +165,47 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       insidePct,
       outsidePct,
       macroDeadlineList,
+    };
+  }, [scopedTrips]);
+
+  // Índice de Satisfação dos Usuários (Avaliações Pós-Viagem via Portal Público)
+  const satisfactionStats = useMemo(() => {
+    const ratedTrips = scopedTrips.filter(
+      (t) => typeof t.rating_overall === 'number' && t.rating_overall > 0
+    );
+    const count = ratedTrips.length;
+    if (count === 0) {
+      return {
+        count: 0,
+        avgOverall: 0,
+        avgPunctuality: 0,
+        avgVehicle: 0,
+        avgDriver: 0,
+        recentComments: [] as TripRequest[],
+      };
+    }
+
+    const avgOverall =
+      ratedTrips.reduce((acc, t) => acc + Number(t.rating_overall || 0), 0) / count;
+    const avgPunctuality =
+      ratedTrips.reduce((acc, t) => acc + Number(t.rating_punctuality || t.rating_overall || 0), 0) / count;
+    const avgVehicle =
+      ratedTrips.reduce((acc, t) => acc + Number(t.rating_vehicle || t.rating_overall || 0), 0) / count;
+    const avgDriver =
+      ratedTrips.reduce((acc, t) => acc + Number(t.rating_driver || t.rating_overall || 0), 0) / count;
+
+    const recentComments = [...ratedTrips]
+      .filter((t) => Boolean(t.rating_comment && t.rating_comment.trim()))
+      .sort((a, b) => String(b.rated_at || '').localeCompare(String(a.rated_at || '')))
+      .slice(0, 6);
+
+    return {
+      count,
+      avgOverall: Number(avgOverall.toFixed(1)),
+      avgPunctuality: Number(avgPunctuality.toFixed(1)),
+      avgVehicle: Number(avgVehicle.toFixed(1)),
+      avgDriver: Number(avgDriver.toFixed(1)),
+      recentComments,
     };
   }, [scopedTrips]);
 
@@ -1400,6 +1443,117 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================================= */}
+          {/* 5º BLOCO: ÍNDICE DE SATISFAÇÃO DOS USUÁRIOS (PORTAL PÚBLICO)              */}
+          {/* ========================================================================= */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 sm:p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <Star className="w-5 h-5 fill-amber-400 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-navy-950">
+                    Índice de Satisfação dos Usuários (Avaliações Pós-Viagem)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Avaliações registradas pelos solicitantes no Portal Público após a conclusão das viagens.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold self-start sm:self-auto">
+                {satisfactionStats.count}{' '}
+                {satisfactionStats.count === 1 ? 'avaliação recebida' : 'avaliações recebidas'}
+              </span>
+            </div>
+
+            {satisfactionStats.count === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                Nenhuma avaliação registrada no período filtrado ainda. Assim que os solicitantes avaliarem viagens
+                concluídas no Portal Público, as notas e comentários aparecerão aqui automaticamente.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-white border border-amber-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                      Nota Geral Média
+                    </span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-black text-navy-950">
+                        {satisfactionStats.avgOverall.toFixed(1)}
+                      </span>
+                      <span className="text-xs font-bold text-amber-600">/ 5.0 ★</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Pontualidade
+                    </span>
+                    <div className="text-2xl font-black text-navy-950">
+                      {satisfactionStats.avgPunctuality.toFixed(1)}{' '}
+                      <span className="text-xs font-bold text-amber-500">★</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Veículo / Conforto
+                    </span>
+                    <div className="text-2xl font-black text-navy-950">
+                      {satisfactionStats.avgVehicle.toFixed(1)}{' '}
+                      <span className="text-xs font-bold text-amber-500">★</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Atendimento Motorista
+                    </span>
+                    <div className="text-2xl font-black text-navy-950">
+                      {satisfactionStats.avgDriver.toFixed(1)}{' '}
+                      <span className="text-xs font-bold text-amber-500">★</span>
+                    </div>
+                  </div>
+                </div>
+
+                {satisfactionStats.recentComments.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-brand-600" />
+                      <span>Comentários Recentes dos Solicitantes</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {satisfactionStats.recentComments.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80 space-y-1.5 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-extrabold text-navy-950 truncate">
+                              {item.process_number} • {item.macro_unit}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-extrabold text-[10px] shrink-0">
+                              {Number(item.rating_overall || 0).toFixed(1)} ★
+                            </span>
+                          </div>
+                          <p className="text-slate-700 italic leading-relaxed">
+                            &ldquo;{item.rating_comment}&rdquo;
+                          </p>
+                          <div className="text-[10px] text-slate-400">
+                            {item.rated_by_name ? `${item.rated_by_name} • ` : ''}
+                            {safeFormatDate(item.rated_at, "dd/MM/yyyy 'às' HH:mm", '')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

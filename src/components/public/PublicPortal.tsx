@@ -5,6 +5,7 @@ import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
 import { StatusBadge } from '../common/StatusBadge';
 import { PublicTransparencyView } from './PublicTransparencyView';
+import { PublicTripRatingCard } from './PublicTripRatingCard';
 import { supabase } from '../../services/supabaseClient';
 import { 
   Search, 
@@ -318,7 +319,15 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     const isDateChanged = trip.status === 'Alterado a Data da Demanda';
                     const receivedFormatted = safeFormatDate(trip.received_at, "dd/MM/yyyy 'às' HH:mm", 'Protocolada no sistema');
                     const isTripFinished =
-                      trip.travel_report_status === 'Finalizado no Sistema' || Boolean(trip.driver_checkout_at);
+                      trip.travel_report_status === 'Finalizado no Sistema' ||
+                      trip.travel_report_status === 'Aguardando a Apreciação do Gerente' ||
+                      Boolean(trip.driver_checkout_at);
+                    const isReturnPast = (() => {
+                      if (!trip.return_datetime) return false;
+                      const parsed = parseISO(trip.return_datetime);
+                      return isValid(parsed) && parsed.getTime() <= Date.now();
+                    })();
+                    const isEligibleForRating = isConfirmed && (isTripFinished || isReturnPast);
                     const isTripInProgress = Boolean(trip.driver_checkin_at) && !isTripFinished;
 
                     return (
@@ -526,6 +535,25 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                             <strong className="block font-bold text-amber-950">Aviso: Data da Viagem Ajustada pela Gestão de Frota</strong>
                             <p className="text-amber-800">Verifique as novas datas de saída e retorno informadas acima.</p>
                           </div>
+                        )}
+
+                        {/* Avaliação de Satisfação pelo Solicitante (liberada após conclusão da viagem confirmada) */}
+                        {isEligibleForRating && (
+                          <PublicTripRatingCard
+                            trip={trip}
+                            onRated={(ratedTripId, rating) => {
+                              setSearchResults((prev) =>
+                                prev.map((item) =>
+                                  item.id === ratedTripId ? { ...item, ...rating } : item
+                                )
+                              );
+                              setAllTrips((prev) =>
+                                prev.map((item) =>
+                                  item.id === ratedTripId ? { ...item, ...rating } : item
+                                )
+                              );
+                            }}
+                          />
                         )}
 
                       </div>
