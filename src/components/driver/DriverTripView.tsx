@@ -476,23 +476,37 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     if (!trip) return;
     setFeedback(null);
 
-    const hasReturnStart = tripLegs.some(
-      (leg, idx) => idx > 0 && typeof leg.odometer_start === 'number' && leg.odometer_start > 0
-    );
+    const hasReturnStart =
+      (tripLegs[0]?.odometer_end !== undefined && tripLegs[0].odometer_end > 0) ||
+      tripLegs.some(
+        (leg, idx) => idx > 0 && typeof leg.odometer_start === 'number' && leg.odometer_start > 0
+      );
     if (!hasReturnStart) {
       setFeedback({
         type: 'error',
-        message: 'Preencha o KM de Saída no trecho de retorno (Trecho 2) antes de registrar o início do retorno.',
+        message: 'Preencha o KM de Chegada no Trecho 1 (ou KM de Saída no Trecho 2) antes de salvar.',
       });
       return;
     }
 
     const nowIso = new Date().toISOString();
-    const updatedLegs = tripLegs.map((leg, idx) =>
-      idx > 0 && typeof leg.odometer_start === 'number' && leg.odometer_start > 0
-        ? { ...leg, started_at: leg.started_at || nowIso }
-        : leg
-    );
+    const firstArrivalKm = tripLegs[0]?.odometer_end;
+    const updatedLegs = tripLegs.map((leg, idx) => {
+      if (idx === 0 && firstArrivalKm !== undefined) {
+        const dist =
+          leg.odometer_start !== undefined && firstArrivalKm >= leg.odometer_start
+            ? Number((firstArrivalKm - leg.odometer_start).toFixed(1))
+            : leg.distance_km;
+        return { ...leg, distance_km: dist, finished_at: leg.finished_at || nowIso };
+      }
+      if (idx > 0) {
+        const startKm = leg.odometer_start ?? (idx === 1 ? firstArrivalKm : undefined);
+        if (typeof startKm === 'number' && startKm > 0) {
+          return { ...leg, odometer_start: startKm, started_at: leg.started_at || nowIso };
+        }
+      }
+      return leg;
+    });
 
     const baseStart =
       trip.odometer_start ||
@@ -1327,6 +1341,40 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                           />
                         </div>
                       </div>
+
+                      {/* Botão Salvar imediato no Trecho 1 (Ida) — atualiza o painel da DIVTRANS para "Retornando" */}
+                      {idx === 0 && (
+                        <div className="pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          {tripLegs.some((l, i) => i > 0 && Boolean(l.started_at)) ? (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-violet-800 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-xl">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-violet-600 shrink-0" />
+                              <span>Salvo • Painel atualizado para &ldquo;Retornando&rdquo;</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              Preencha o <strong>KM Chegada</strong> acima e salve para mudar o status para <strong>Retornando</strong>.
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={isSubmitting || leg.odometer_end === undefined}
+                            onClick={handleSaveReturnProgress}
+                            className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-extrabold shadow-xs flex items-center justify-center gap-1.5 shrink-0 transition-colors"
+                          >
+                            {isSubmitting ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Navigation className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              {tripLegs.some((l, i) => i > 0 && Boolean(l.started_at))
+                                ? 'Atualizar KM / Retorno'
+                                : 'Salvar Chegada & Avisar Retorno'}
+                            </span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1338,21 +1386,6 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Adicionar trecho extra (deslocamento local / parada)</span>
-                </button>
-
-                {/* Botão para avisar a DIVTRANS que iniciou o retorno (assim que preencher KM Saída do Trecho 2) */}
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={handleSaveReturnProgress}
-                  className="w-full py-2.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs flex items-center justify-center gap-2 transition-colors"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Navigation className="w-4 h-4" />
-                  )}
-                  <span>Registrar Início do Retorno (Atualizar Painel DIVTRANS)</span>
                 </button>
               </div>
 
