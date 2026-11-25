@@ -4,6 +4,7 @@ import { TripService } from '../../services/tripService';
 import { AuditService } from '../../services/auditService';
 import { DistanceService } from '../../services/distanceService';
 import { FleetService } from '../../services/fleetService';
+import { supabase } from '../../services/supabaseClient';
 import { StatusBadge } from '../common/StatusBadge';
 import {
   ClipboardCheck,
@@ -28,6 +29,7 @@ import {
   Plus,
   Trash2,
   Route,
+  Lock,
 } from 'lucide-react';
 import { safeFormatDate } from '../../utils/dateUtils';
 import { buildDefaultTripLegs, buildDriverOrderUrl } from '../../utils/driverLinkUtils';
@@ -311,23 +313,54 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
     onTripUpdated();
   };
 
-  const handleOpenApproveModal = (trip: TripRequest) => {
-    let defaultName = '';
+  const getLoggedUserNameSync = (): string => {
     try {
       const savedUser = localStorage.getItem('sigfrota_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
-        defaultName = parsed.name || '';
+        if (parsed.name && String(parsed.name).trim()) return String(parsed.name).trim();
+        if (parsed.email) {
+          const prefix = String(parsed.email).split('@')[0].replace(/[._-]/g, ' ');
+          return prefix
+            .split(' ')
+            .filter(Boolean)
+            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+        }
       }
     } catch {
       // ignore
     }
+    return 'Gestor de Frotas';
+  };
+
+  const handleOpenApproveModal = (trip: TripRequest) => {
+    const initialName = getLoggedUserNameSync();
     const savedRole =
       localStorage.getItem('sigfrota_approver_role') || 'Chefe da Divisão de Transportes — DIVTRANS';
 
-    setApproverName(defaultName);
+    setApproverName(initialName);
     setApproverRole(savedRole);
     setApprovingTrip(trip);
+
+    // Garante sincronização com o usuário autenticado real na sessão JWT do Supabase
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user;
+      if (!user) return;
+      const metaName = String(user.user_metadata?.full_name || '').trim();
+      let resolved = metaName;
+      if (!resolved && user.email) {
+        const prefix = user.email.split('@')[0].replace(/[._-]/g, ' ');
+        resolved = prefix
+          .split(' ')
+          .filter(Boolean)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+      }
+      if (resolved) {
+        setApproverName(resolved);
+      }
+    });
   };
 
   const handleConfirmApproveReport = (e: React.FormEvent) => {
@@ -1224,17 +1257,26 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ trips, onTri
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Nome Completo do Gestor Aprovador *
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="block font-bold text-slate-700">
+                    Nome Completo do Gestor Aprovador *
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    <Lock className="w-2.5 h-2.5" />
+                    Usuário logado
+                  </span>
+                </div>
                 <input
                   type="text"
                   required
+                  readOnly
+                  disabled
                   value={approverName}
-                  onChange={(e) => setApproverName(e.target.value)}
-                  placeholder="Ex: Elano Arruda"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 font-semibold focus:border-brand-500 focus:outline-hidden"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-slate-700 font-bold cursor-not-allowed select-none"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Identificado automaticamente pela sua conta autenticada (não pode ser alterado).
+                </p>
               </div>
 
               <div>
