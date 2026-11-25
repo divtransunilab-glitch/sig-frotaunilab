@@ -552,7 +552,8 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
                   const veh = getVehicle(trip.allocated_vehicle_id);
                   const drv = getDriver(trip.allocated_driver_id);
                   const returnStartedAt = Array.isArray(trip.trip_legs)
-                    ? trip.trip_legs.find((l, idx) => idx > 0 && Boolean(l.started_at))?.started_at
+                    ? trip.trip_legs.find((l, idx) => idx > 0 && Boolean(l.started_at))?.started_at ||
+                      trip.trip_legs[0]?.finished_at
                     : undefined;
                   const returnTimeFormatted = returnStartedAt
                     ? safeFormatDate(returnStartedAt, 'HH:mm', '')
@@ -746,14 +747,10 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
                             </div>
                             <div
                               className={`py-1 px-1.5 rounded-lg border ${
-                                theme.stepIndex === 2
+                                theme.stepIndex >= 2
                                   ? isTvMode
                                     ? 'bg-violet-500/25 border-violet-500/50 text-violet-200'
                                     : 'bg-violet-50 border-violet-200 text-violet-800'
-                                  : theme.stepIndex >= 3
-                                  ? isTvMode
-                                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                                   : isTvMode
                                   ? 'bg-slate-800/60 border-slate-800 text-slate-500'
                                   : 'bg-slate-50 border-slate-200 text-slate-400'
