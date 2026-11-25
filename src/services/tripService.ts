@@ -626,6 +626,126 @@ export class TripService {
   }
 
   /**
+   * Busca dados anonimizados para o Painel de Transparência via RPC segura (LGPD)
+   * com fallback automático caso a migração de blindagem ainda não tenha sido executada.
+   */
+  static async fetchPublicTransparencyTrips(): Promise<TripRequest[]> {
+    try {
+      const { data, error } = await supabase.rpc('get_public_transparency_trips');
+      if (!error && Array.isArray(data)) {
+        return data as TripRequest[];
+      }
+    } catch (e) {
+      console.warn('RPC get_public_transparency_trips indisponível, usando fallback:', e);
+    }
+    return this.fetchFromSupabase();
+  }
+
+  /**
+   * Busca pública de processo via RPC segura (sem expor tokens, CNH ou PIN)
+   * com fallback local/padrão caso a RPC ainda não exista no banco.
+   */
+  static async searchPublicTripsAsync(query: string): Promise<Array<TripRequest & { driver_public_name?: string }>> {
+    const clean = query.trim();
+    if (clean.length < 2) return [];
+
+    try {
+      const { data, error } = await supabase.rpc('search_public_trip', { p_query: clean });
+      if (!error && Array.isArray(data)) {
+        return data as Array<TripRequest & { driver_public_name?: string }>;
+      }
+    } catch (e) {
+      console.warn('RPC search_public_trip indisponível, usando busca local:', e);
+    }
+
+    return this.searchPublicTrips(clean);
+  }
+
+  /**
+   * Carrega a Ordem Digital do Motorista via RPC segura (valida token no servidor e nunca expõe PIN/CNH)
+   * com fallback automático caso a migração ainda não tenha sido executada.
+   */
+  static async fetchDriverOrderSecure(
+    tripId: string,
+    accessToken?: string | null
+  ): Promise<{
+    status: 'ok' | 'not_found' | 'invalid_token';
+    trip?: TripRequest;
+    vehicle?: any;
+    driver?: {
+      id: string;
+      name: string;
+      cnh_category?: string;
+      driver_category?: string;
+      requires_code: boolean;
+      has_pin?: boolean;
+      has_cnh?: boolean;
+      has_phone?: boolean;
+    } | null;
+    usedSecureRpc: boolean;
+  }> {
+    try {
+      const { data, error } = await supabase.rpc('get_driver_order_public', {
+        p_trip_id: tripId,
+        p_access_token: accessToken || null,
+      });
+
+      if (!error && data && typeof data === 'object' && 'status' in data) {
+        const res = data as any;
+        if (res.status === 'invalid_token') return { status: 'invalid_token', usedSecureRpc: true };
+        if (res.status === 'not_found') return { status: 'not_found', usedSecureRpc: true };
+        if (res.status === 'ok' && res.trip) {
+          return {
+            status: 'ok',
+            trip: res.trip as TripRequest,
+            vehicle: res.vehicle || undefined,
+            driver: res.driver || null,
+            usedSecureRpc: true,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('RPC get_driver_order_public indisponível, usando fallback:', e);
+    }
+
+    // Fallback para bancos antes da migração de blindagem
+    const fallbackTrip = await this.fetchTripByIdPublic(tripId);
+    if (!fallbackTrip) return { status: 'not_found', usedSecureRpc: false };
+    return { status: 'ok', trip: fallbackTrip, usedSecureRpc: false };
+  }
+
+  /**
+   * Valida o código de 4 dígitos do motorista 100% no servidor (PIN/CNH/Telefone nunca sai do banco)
+   */
+  static async verifyDriverCodeServer(
+    tripId: string,
+    accessToken: string | null,
+    driverCode: string
+  ): Promise<{ valid: boolean; driverName?: string; error?: string; usedSecureRpc: boolean }> {
+    try {
+      const { data, error } = await supabase.rpc('verify_driver_identity', {
+        p_trip_id: tripId,
+        p_access_token: accessToken || null,
+        p_driver_code: driverCode,
+      });
+
+      if (!error && data && typeof data === 'object' && 'valid' in data) {
+        const res = data as any;
+        return {
+          valid: Boolean(res.valid),
+          driverName: res.driver_name,
+          error: res.error,
+          usedSecureRpc: true,
+        };
+      }
+    } catch (e) {
+      console.warn('RPC verify_driver_identity indisponível, usando fallback:', e);
+    }
+
+    return { valid: false, usedSecureRpc: false };
+  }
+
+  /**
    * Busca uma viagem específica diretamente no Supabase (para link/QR Code do motorista)
    * com fallback automático para o cache local.
    */

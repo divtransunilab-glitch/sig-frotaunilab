@@ -47,10 +47,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'track' | 'transparency' | 'login'>('track');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<TripRequest[]>([]);
+  const [searchResults, setSearchResults] = useState<Array<TripRequest & { driver_public_name?: string }>>([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Carrega todas as viagens diretamente do Supabase (com cache local imediato)
+  // Carrega todas as viagens diretamente do Supabase via RPC pública segura (anonimizada — LGPD)
   const [allTrips, setAllTrips] = useState<TripRequest[]>(() => TripService.getTrips());
   const [isSyncingPublic, setIsSyncingPublic] = useState(false);
 
@@ -58,9 +58,8 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
     let active = true;
     setIsSyncingPublic(true);
     Promise.all([
-      TripService.fetchFromSupabase(),
+      TripService.fetchPublicTransparencyTrips(),
       FleetService.fetchVehiclesFromSupabase(),
-      FleetService.fetchDriversFromSupabase(),
     ])
       .then(([freshTrips]) => {
         if (active && freshTrips && freshTrips.length > 0) {
@@ -83,10 +82,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
   const cities = DistanceService.getCities();
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
-    const results = TripService.searchPublicTrips(searchQuery.trim());
+    const results = await TripService.searchPublicTripsAsync(searchQuery.trim());
     setSearchResults(results);
     setHasSearched(true);
   };
@@ -496,7 +495,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                             {isConfirmed && vehicle ? (
                               <div className="space-y-0.5">
                                 <div className="font-bold text-navy-950">{vehicle.model} ({vehicle.plate})</div>
-                                <div className="text-slate-600 font-medium">Motorista: {driver?.name}</div>
+                                <div className="text-slate-600 font-medium">Motorista: {(trip as any).driver_public_name || driver?.name || 'Escalado pela DIVTRANS'}</div>
                                 {contractor && <div className="text-[10px] text-slate-500">{contractor.name}</div>}
                               </div>
                             ) : (

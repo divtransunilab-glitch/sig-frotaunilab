@@ -28,6 +28,16 @@ interface TrafficOrderModalProps {
   onClose: () => void;
 }
 
+const escapeHtml = (value?: string | number | null): string => {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
   trip,
   isOpen,
@@ -107,11 +117,11 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
           ${parsedPassengers
             .map(
               (p) =>
-                `<div style="padding: 2px 0; border-bottom: 1px dotted #cbd5e1;">&#9744; ${p}</div>`
+                `<div style="padding: 2px 0; border-bottom: 1px dotted #cbd5e1;">&#9744; ${escapeHtml(p)}</div>`
             )
             .join('')}
         </div>`
-      : `<span style="color: #334155;">${trip.requester_name} e comitiva institucional (${trip.passenger_count} pessoas)</span>`;
+      : `<span style="color: #334155;">${escapeHtml(trip.requester_name)} e comitiva institucional (${escapeHtml(trip.passenger_count)} pessoas)</span>`;
 
   const generateSheetHTML = () => `
     <div style="width: 760px; background-color: #ffffff; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; box-sizing: border-box; line-height: 1.35;">
@@ -134,9 +144,9 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
         <tr>
           <td style="vertical-align: middle;">
             <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Documento de Tráfego:</div>
-            <div style="font-size: 13px; font-weight: 800; color: #0f172a;">ORDEM DE TRÁFEGO / AUTORIZAÇÃO DE SAÍDA Nº ${trip.process_number.replace('23282.', '')}</div>
+            <div style="font-size: 13px; font-weight: 800; color: #0f172a;">ORDEM DE TRÁFEGO / AUTORIZAÇÃO DE SAÍDA Nº ${escapeHtml(trip.process_number.replace('23282.', ''))}</div>
             <div style="font-size: 10px; margin-top: 3px;">
-              <span style="color: #64748b;">Processo SEI:</span> <strong style="color: #0f172a;">${trip.process_number}</strong>
+              <span style="color: #64748b;">Processo SEI:</span> <strong style="color: #0f172a;">${escapeHtml(trip.process_number)}</strong>
               &nbsp;&nbsp;|&nbsp;&nbsp;
               <span style="color: #64748b;">Emissão:</span> <strong style="color: #0f172a;">${format(new Date(), 'dd/MM/yyyy HH:mm')}</strong>
             </div>
@@ -164,23 +174,23 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
         </div>
         <table style="width: 100%; background-color: #f8fafc; font-size: 10.5px; border-collapse: collapse;">
           <tr>
-            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Solicitante:</span> <strong style="color: #0f172a;">${trip.requester_name}</strong></td>
-            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">E-mail:</span> <span style="color: #334155;">${trip.requester_email || 'Não informado'}</span></td>
+            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Solicitante:</span> <strong style="color: #0f172a;">${escapeHtml(trip.requester_name)}</strong></td>
+            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">E-mail:</span> <span style="color: #334155;">${escapeHtml(trip.requester_email || 'Não informado')}</span></td>
           </tr>
           <tr>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Unidade Solicitante:</span> <strong style="color: #0f172a;">${trip.requesting_unit} (${trip.macro_unit})</strong></td>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Tipo de Atividade:</span> <span style="color: #334155;">${trip.activity_type}</span></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Unidade Solicitante:</span> <strong style="color: #0f172a;">${escapeHtml(trip.requesting_unit)} (${escapeHtml(trip.macro_unit)})</strong></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Tipo de Atividade:</span> <span style="color: #334155;">${escapeHtml(trip.activity_type)}</span></td>
           </tr>
           <tr>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Data da Demanda:</span> <span style="color: #334155;">${recFormatted}</span></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Data da Demanda:</span> <span style="color: #334155;">${escapeHtml(recFormatted)}</span></td>
             <td style="padding: 5px 8px;">
               <span style="color: #64748b; font-weight: 600;">Situação:</span> 
               <span style="display: inline-block; background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 4px; padding: 1px 6px; font-weight: 800; font-size: 9.5px; text-transform: uppercase;">
-                ${trip.status}
+                ${escapeHtml(trip.status)}
               </span>
             </td>
           </tr>
-          ${trip.notes ? `<tr><td colspan="2" style="padding: 5px 8px; border-top: 1px solid #e2e8f0;"><span style="color: #64748b; font-weight: 600;">Finalidade / Observações:</span> <span style="color: #334155; font-style: italic;">${trip.notes}</span></td></tr>` : ''}
+          ${trip.notes ? `<tr><td colspan="2" style="padding: 5px 8px; border-top: 1px solid #e2e8f0;"><span style="color: #64748b; font-weight: 600;">Finalidade / Observações:</span> <span style="color: #334155; font-style: italic;">${escapeHtml(trip.notes)}</span></td></tr>` : ''}
         </table>
       </div>
 
@@ -191,21 +201,21 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
         </div>
         <table style="width: 100%; background-color: #f8fafc; font-size: 10.5px; border-collapse: collapse;">
           <tr>
-            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Veículo / Modelo:</span> <strong style="color: #0f172a;">${veiculoModelo}</strong></td>
+            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Veículo / Modelo:</span> <strong style="color: #0f172a;">${escapeHtml(veiculoModelo)}</strong></td>
             <td style="padding: 5px 8px; width: 50%;">
               <span style="color: #64748b; font-weight: 600;">Placa Oficial:</span> 
               <span style="display: inline-block; background-color: #ffffff; color: #0f172a; border: 1px solid #94a3b8; border-radius: 4px; padding: 1px 6px; font-family: monospace; font-weight: 800; font-size: 11px;">
-                ${veiculoPlaca}
+                ${escapeHtml(veiculoPlaca)}
               </span>
             </td>
           </tr>
           <tr>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Lotação / Capacidade:</span> <span style="color: #334155;">${veiculoCapacidade}</span></td>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Empresa / Fornecedor:</span> <span style="color: #334155;">${contratadaNome}</span></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Lotação / Capacidade:</span> <span style="color: #334155;">${escapeHtml(veiculoCapacidade)}</span></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Empresa / Fornecedor:</span> <span style="color: #334155;">${escapeHtml(contratadaNome)}</span></td>
           </tr>
           <tr style="border-top: 1px solid #e2e8f0;">
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Motorista Escalado:</span> <strong style="color: #0f172a;">${motoristaNome}</strong></td>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Habilitação & Contato:</span> <span style="color: #334155;">${motoristaCnh} • ${motoristaTel}</span></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Motorista Escalado:</span> <strong style="color: #0f172a;">${escapeHtml(motoristaNome)}</strong></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Habilitação & Contato:</span> <span style="color: #334155;">${escapeHtml(motoristaCnh)} • ${escapeHtml(motoristaTel)}</span></td>
           </tr>
         </table>
       </div>
@@ -219,30 +229,30 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
           <tr>
             <td colspan="2" style="padding: 5px 8px; background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
               <span style="color: #64748b; font-weight: bold; font-size: 9px; text-transform: uppercase;">Trajeto:</span>
-              &nbsp;<strong style="color: #0f172a;">${getCityName(trip.origin_city_id)}</strong>
+              &nbsp;<strong style="color: #0f172a;">${escapeHtml(getCityName(trip.origin_city_id))}</strong>
               &nbsp;<span style="color: #2563eb; font-weight: bold;">➔</span>&nbsp;
-              <strong style="color: #0f172a;">${getCityName(trip.destination_city_id)}</strong>
+              <strong style="color: #0f172a;">${escapeHtml(getCityName(trip.destination_city_id))}</strong>
             </td>
           </tr>
           ${(trip.origin_address || trip.destination_address) ? `
           <tr>
             <td style="padding: 4px 8px; width: 50%; background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
               <span style="color: #475569; font-weight: 700; font-size: 9.5px;">📍 Local de Saída (Embarque):</span><br/>
-              <span style="color: #0f172a; font-weight: 600;">${trip.origin_address || 'Campus Institucional UNILAB'}</span>
+              <span style="color: #0f172a; font-weight: 600;">${escapeHtml(trip.origin_address || 'Campus Institucional UNILAB')}</span>
             </td>
             <td style="padding: 4px 8px; width: 50%; background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
               <span style="color: #475569; font-weight: 700; font-size: 9.5px;">🏁 Local de Chegada (Desembarque):</span><br/>
-              <span style="color: #0f172a; font-weight: 600;">${trip.destination_address || 'Conforme Itinerário Oficial'}</span>
+              <span style="color: #0f172a; font-weight: 600;">${escapeHtml(trip.destination_address || 'Conforme Itinerário Oficial')}</span>
             </td>
           </tr>
           ` : ''}
           <tr>
-            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Saída Prevista:</span> <strong style="color: #065f46;">${depFormatted}</strong></td>
-            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Retorno Previsto:</span> <strong style="color: #065f46;">${retFormatted}</strong></td>
+            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Saída Prevista:</span> <strong style="color: #065f46;">${escapeHtml(depFormatted)}</strong></td>
+            <td style="padding: 5px 8px; width: 50%;"><span style="color: #64748b; font-weight: 600;">Retorno Previsto:</span> <strong style="color: #065f46;">${escapeHtml(retFormatted)}</strong></td>
           </tr>
           <tr>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Distância Estimada:</span> <strong style="color: #0f172a;">${trip.estimated_km} km (Ida e Volta)</strong></td>
-            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Lotação Solicitada:</span> <strong style="color: #0f172a;">${trip.passenger_count} passageiro(s)</strong></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Distância Estimada:</span> <strong style="color: #0f172a;">${escapeHtml(trip.estimated_km)} km (Ida e Volta)</strong></td>
+            <td style="padding: 5px 8px;"><span style="color: #64748b; font-weight: 600;">Lotação Solicitada:</span> <strong style="color: #0f172a;">${escapeHtml(trip.passenger_count)} passageiro(s)</strong></td>
           </tr>
           <tr style="border-top: 1px solid #e2e8f0;">
             <td colspan="2" style="padding: 6px 8px;">
@@ -294,11 +304,11 @@ export const TrafficOrderModal: React.FC<TrafficOrderModalProps> = ({
           <tr>
             <td style="width: 33%; padding: 0 8px; vertical-align: top;">
               <div style="border-top: 1px solid #0f172a; padding-top: 3px; font-weight: 700; font-size: 10px; color: #0f172a;">Motorista / Condutor</div>
-              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${motoristaNome}</div>
+              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${escapeHtml(motoristaNome)}</div>
             </td>
             <td style="width: 33%; padding: 0 8px; vertical-align: top;">
               <div style="border-top: 1px solid #0f172a; padding-top: 3px; font-weight: 700; font-size: 10px; color: #0f172a;">Solicitante / Responsável</div>
-              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${trip.requester_name}</div>
+              <div style="font-size: 9px; color: #475569; margin-top: 2px;">${escapeHtml(trip.requester_name)}</div>
             </td>
             <td style="width: 33%; padding: 0 8px; vertical-align: top;">
               <div style="border-top: 1px solid #0f172a; padding-top: 3px; font-weight: 700; font-size: 10px; color: #0f172a;">Divisão de Transporte / DIVTRANS</div>

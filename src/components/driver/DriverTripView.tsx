@@ -54,6 +54,19 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
   const [trip, setTrip] = useState<TripRequest | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => FleetService.getVehicles());
   const [drivers, setDrivers] = useState<Driver[]>(() => FleetService.getDrivers());
+  const [secureVehicle, setSecureVehicle] = useState<Vehicle | undefined>(undefined);
+  const [secureDriver, setSecureDriver] = useState<{
+    id: string;
+    name: string;
+    cnh_category?: string;
+    driver_category?: string;
+    requires_code: boolean;
+    has_pin?: boolean;
+    has_cnh?: boolean;
+    has_phone?: boolean;
+  } | null>(null);
+  const [serverTokenInvalid, setServerTokenInvalid] = useState(false);
+  const [isCodeVerifiedOnServer, setIsCodeVerifiedOnServer] = useState(false);
   const [cities] = useState<City[]>(() => DistanceService.getCities());
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,16 +104,29 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
 
   const loadData = async () => {
     setIsLoading(true);
+    setServerTokenInvalid(false);
     try {
-      const [fetchedTrip, fetchedVehicles, fetchedDrivers] = await Promise.all([
-        TripService.fetchTripByIdPublic(tripId),
-        FleetService.fetchVehiclesFromSupabase(),
-        FleetService.fetchDriversFromSupabase(),
-      ]);
+      const secureOrder = await TripService.fetchDriverOrderSecure(tripId, urlAccessToken);
 
-      if (fetchedVehicles) setVehicles(fetchedVehicles);
-      if (fetchedDrivers) setDrivers(fetchedDrivers);
+      if (secureOrder.status === 'invalid_token') {
+        setServerTokenInvalid(true);
+        setTrip(null);
+        return;
+      }
 
+      if (!secureOrder.usedSecureRpc) {
+        const [fetchedVehicles, fetchedDrivers] = await Promise.all([
+          FleetService.fetchVehiclesFromSupabase(),
+          FleetService.fetchDriversFromSupabase(),
+        ]);
+        if (fetchedVehicles) setVehicles(fetchedVehicles);
+        if (fetchedDrivers) setDrivers(fetchedDrivers);
+      } else {
+        if (secureOrder.vehicle) setSecureVehicle(secureOrder.vehicle);
+        if (secureOrder.driver) setSecureDriver(secureOrder.driver);
+      }
+
+      const fetchedTrip = secureOrder.trip || null;
       if (fetchedTrip) {
         setTrip(fetchedTrip);
         setOdometerStart(
@@ -176,28 +202,61 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
   };
 
   const vehicle = useMemo(
-    () => (trip?.allocated_vehicle_id ? vehicles.find((v) => v.id === trip.allocated_vehicle_id) : undefined),
-    [trip, vehicles]
+    () =>
+      secureVehicle ||
+      (trip?.allocated_vehicle_id ? vehicles.find((v) => v.id === trip.allocated_vehicle_id) : undefined),
+    [secureVehicle, trip, vehicles]
   );
 
   const driver = useMemo(
-    () => (trip?.allocated_driver_id ? drivers.find((d) => d.id === trip.allocated_driver_id) : undefined),
-    [trip, drivers]
+    () =>
+      secureDriver
+        ? ({
+            id: secureDriver.id,
+            name: secureDriver.name,
+            cnh_category: secureDriver.cnh_category || '',
+            driver_category: (secureDriver.driver_category as any) || 'Motoristas de 01-09',
+            contractor_id: '',
+            is_active: true,
+          } as Driver)
+        : trip?.allocated_driver_id
+        ? drivers.find((d) => d.id === trip.allocated_driver_id)
+        : undefined,
+    [secureDriver, trip, drivers]
   );
 
-  const expectedDriverAuth = useMemo(() => getExpectedDriverCodes(driver), [driver]);
-  const requiresDriverCode = expectedDriverAuth.codes.length > 0;
+  const expectedDriverAuth = useMemo(() => {
+    if (secureDriver) {
+      const hints: string[] = [];
+      if (secureDriver.has_pin) hints.push('PIN');
+      if (secureDriver.has_cnh) hints.push('4 últimos dígitos da CNH');
+      if (secureDriver.has_phone) hints.push('4 últimos dígitos do telefone');
+      return {
+        codes: [] as string[],
+        hint: hints.length > 0 ? hints.join(' ou ') : '4 dígitos de identificação',
+      };
+    }
+    return getExpectedDriverCodes(driver);
+  }, [secureDriver, driver]);
+
+  const requiresDriverCode = secureDriver
+    ? secureDriver.requires_code
+    : expectedDriverAuth.codes.length > 0;
+
   const isDriverVerified =
     !requiresDriverCode ||
-    (verifiedDriverCode.length >= 4 && expectedDriverAuth.codes.includes(verifiedDriverCode));
+    isCodeVerifiedOnServer ||
+    (!secureDriver && verifiedDriverCode.length >= 4 && expectedDriverAuth.codes.includes(verifiedDriverCode));
 
-  const isTokenInvalid = Boolean(
-    trip?.driver_access_token &&
-      trip.driver_access_token.trim() !== '' &&
-      urlAccessToken !== trip.driver_access_token.trim()
-  );
+  const isTokenInvalid =
+    serverTokenInvalid ||
+    Boolean(
+      trip?.driver_access_token &&
+        trip.driver_access_token.trim() !== '' &&
+        urlAccessToken !== trip.driver_access_token.trim()
+    );
 
-  const handleVerifyDriverIdentity = (e: React.FormEvent) => {
+  const handleVerifyDriverIdentity = async (e: React.FormEvent) => {
     e.preventDefault();
     setVerifyError('');
     const clean = driverCodeInput.replace(/\D/g, '');
@@ -205,6 +264,28 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       setVerifyError('Digite os 4 dígitos de identificação.');
       return;
     }
+
+    // Tenta validação 100% no servidor primeiro (PIN/CNH nunca sai do banco)
+    const serverCheck = await TripService.verifyDriverCodeServer(tripId, urlAccessToken, clean);
+    if (serverCheck.usedSecureRpc) {
+      if (!serverCheck.valid) {
+        setVerifyError(
+          serverCheck.error ||
+            `Código incorreto para o motorista escalado (${driver?.name || ''}). Informe seu ${expectedDriverAuth.hint}.`
+        );
+        return;
+      }
+      setVerifiedDriverCode(clean);
+      setIsCodeVerifiedOnServer(true);
+      try {
+        sessionStorage.setItem(`sigfrota_driver_code_${tripId}`, clean);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    // Fallback local (antes da migração SQL)
     if (expectedDriverAuth.codes.length > 0 && !expectedDriverAuth.codes.includes(clean)) {
       setVerifyError(
         `Código incorreto para o motorista escalado (${driver?.name || ''}). Informe seu ${expectedDriverAuth.hint}.`
@@ -212,6 +293,7 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
       return;
     }
     setVerifiedDriverCode(clean);
+    setIsCodeVerifiedOnServer(true);
     try {
       sessionStorage.setItem(`sigfrota_driver_code_${tripId}`, clean);
     } catch {
@@ -504,17 +586,18 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     );
   }
 
-  if (!trip) {
+  if (isTokenInvalid) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 max-w-md w-full space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-7 h-7" />
+        <div className="bg-white rounded-3xl shadow-xl border border-rose-200 p-8 max-w-md w-full space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
           </div>
-          <h1 className="text-lg font-extrabold text-navy-950">Ordem de Tráfego não encontrada</h1>
+          <h1 className="text-lg font-extrabold text-navy-950">Link Revogado ou Inválido</h1>
           <p className="text-xs text-slate-600 leading-relaxed">
-            O link pode estar incompleto ou a viagem foi removida/reagendada pela DIVTRANS.
-            Solicite um novo link atualizado ao setor de transportes.
+            A chave de segurança desta Ordem de Tráfego não confere ou foi revogada (por exemplo,
+            após alteração do motorista escalado). Solicite o link atualizado à{' '}
+            <strong>DIVTRANS / UNILAB</strong>.
           </p>
           {onExitDriverMode && (
             <button
@@ -530,18 +613,17 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     );
   }
 
-  if (isTokenInvalid) {
+  if (!trip) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-white rounded-3xl shadow-xl border border-rose-200 p-8 max-w-md w-full space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
-            <Lock className="w-7 h-7" />
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 max-w-md w-full space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
           </div>
-          <h1 className="text-lg font-extrabold text-navy-950">Link Revogado ou Inválido</h1>
+          <h1 className="text-lg font-extrabold text-navy-950">Ordem de Tráfego não encontrada</h1>
           <p className="text-xs text-slate-600 leading-relaxed">
-            A chave de segurança desta Ordem de Tráfego não confere ou foi revogada (por exemplo,
-            após alteração do motorista escalado). Solicite o link atualizado à{' '}
-            <strong>DIVTRANS / UNILAB</strong>.
+            O link pode estar incompleto ou a viagem foi removida/reagendada pela DIVTRANS.
+            Solicite um novo link atualizado ao setor de transportes.
           </p>
           {onExitDriverMode && (
             <button

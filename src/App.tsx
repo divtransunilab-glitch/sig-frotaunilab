@@ -36,10 +36,41 @@ export function App() {
   // Modo Mobile do Motorista (?motorista=<tripId>) — acesso direto via Link/QR Code sem login
   const [driverTripId, setDriverTripId] = useState<string | null>(() => getDriverTripIdFromUrl());
 
-  // Controle de Autenticação / Separação entre Portal do Solicitante e Sistema de Gestão
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('sigfrota_auth') === 'true';
-  });
+  // Controle de Autenticação validado pela sessão JWT real do Supabase Auth
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const hasValidSession = Boolean(data.session?.user);
+      setIsAuthenticated(hasValidSession);
+      if (hasValidSession) {
+        localStorage.setItem('sigfrota_auth', 'true');
+      } else {
+        localStorage.removeItem('sigfrota_auth');
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      const hasValidSession = Boolean(session?.user);
+      setIsAuthenticated(hasValidSession);
+      if (hasValidSession) {
+        localStorage.setItem('sigfrota_auth', 'true');
+        loadTrips();
+      } else {
+        localStorage.removeItem('sigfrota_auth');
+        localStorage.removeItem('sigfrota_user');
+      }
+    });
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [trips, setTrips] = useState<TripRequest[]>([]);
@@ -172,7 +203,12 @@ export function App() {
     showToast('Acesso autorizado! Bem-vindo ao SIG-FROTA Gestão.', 'success');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
     localStorage.removeItem('sigfrota_auth');
     localStorage.removeItem('sigfrota_user');
     setIsAuthenticated(false);
