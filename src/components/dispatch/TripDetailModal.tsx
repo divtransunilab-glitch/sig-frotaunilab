@@ -43,6 +43,7 @@ interface TripDetailModalProps {
   onClose: () => void;
   onOpenDispatch: (trip: TripRequest) => void;
   onOpenReject: (trip: TripRequest) => void;
+  onOpenCancel?: (trip: TripRequest) => void;
   onOpenChangeDate: (trip: TripRequest) => void;
   onOpenEdit?: (trip: TripRequest) => void;
   onOpenTrafficOrder?: (trip: TripRequest) => void;
@@ -55,6 +56,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   onClose,
   onOpenDispatch,
   onOpenReject,
+  onOpenCancel,
   onOpenChangeDate,
   onOpenEdit,
   onOpenTrafficOrder,
@@ -438,7 +440,24 @@ ${driverOrderUrl}`;
               </div>
             )}
 
-            {trip.notes && (
+            {trip.status.includes('Cancelado') && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1 text-xs">
+                <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{trip.status}</span>
+                </div>
+                {trip.rejection_reason && (
+                  <div>
+                    <strong>Motivo:</strong> {trip.rejection_reason}
+                  </div>
+                )}
+                {trip.rejection_notes && (
+                  <div className="italic text-rose-800/90">{trip.rejection_notes}</div>
+                )}
+              </div>
+            )}
+
+            {trip.notes && !trip.status.includes('Cancelado') && (
               <div className="text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
                 <span className="font-bold block text-slate-700 mb-0.5">Observações Operacionais:</span>
                 {trip.notes}
@@ -694,9 +713,24 @@ ${driverOrderUrl}`;
                   onClose();
                   onOpenReject(trip);
                 }}
-                className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
+                className="px-3 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 border border-slate-900 transition-colors"
+                title="Indeferir solicitação"
               >
                 Indeferir
+              </button>
+            )}
+
+            {onOpenCancel && !trip.status.includes('Cancelado') && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenCancel(trip);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 flex items-center gap-1 transition-colors"
+                title="Cancelar solicitação (Unidade Demandante ou Executante)"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>Cancelar</span>
               </button>
             )}
 

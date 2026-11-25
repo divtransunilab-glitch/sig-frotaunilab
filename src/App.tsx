@@ -14,6 +14,7 @@ import { QuickDispatchModal } from './components/dispatch/QuickDispatchModal';
 import { NewTripModal } from './components/dispatch/NewTripModal';
 import { TripDetailModal } from './components/dispatch/TripDetailModal';
 import { RejectTripModal } from './components/dispatch/RejectTripModal';
+import { CancelTripModal } from './components/dispatch/CancelTripModal';
 import { ChangeDateModal } from './components/dispatch/ChangeDateModal';
 import { DeleteTripModal } from './components/dispatch/DeleteTripModal';
 import { ImportSpreadsheetModal } from './components/dispatch/ImportSpreadsheetModal';
@@ -95,6 +96,7 @@ export function App() {
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -282,6 +284,11 @@ export function App() {
     setIsRejectModalOpen(true);
   };
 
+  const handleOpenCancelModal = (trip: TripRequest) => {
+    setSelectedTrip(trip);
+    setIsCancelModalOpen(true);
+  };
+
   const handleOpenChangeDateModal = (trip: TripRequest) => {
     setSelectedTrip(trip);
     setIsChangeDateModalOpen(true);
@@ -366,6 +373,25 @@ export function App() {
     });
 
     showToast(`Processo ${trip.process_number} indeferido com sucesso.`, 'info');
+  };
+
+  const handleConfirmCancel = (
+    tripId: string,
+    data: { isExecutante: boolean; reason: string; notes: string }
+  ) => {
+    const trip = TripService.cancelTrip(tripId, data);
+    setTrips((prev) => prev.map((t) => (t.id === trip.id ? trip : t)));
+
+    AuditService.logEvent({
+      action: 'Cancelamento de Demanda',
+      process_number: trip.process_number,
+      target_id: trip.id,
+      entity_type: 'Viagem',
+      compliance_status: 'Exceção Justificada',
+      details: `${trip.status}. Motivo: ${data.reason}. Justificativa: ${data.notes || 'Sem observações'}`,
+    });
+
+    showToast(`Processo ${trip.process_number} cancelado (${data.isExecutante ? 'Unidade Executante' : 'Demandante'}).`, 'info');
   };
 
   const handleConfirmChangeDate = (
@@ -692,6 +718,7 @@ export function App() {
         onClose={() => setIsDetailModalOpen(false)}
         onOpenDispatch={handleOpenDispatchModal}
         onOpenReject={handleOpenRejectModal}
+        onOpenCancel={handleOpenCancelModal}
         onOpenChangeDate={handleOpenChangeDateModal}
         onOpenEdit={handleOpenEditTrip}
         onOpenTrafficOrder={handleOpenTrafficOrderModal}
@@ -703,6 +730,13 @@ export function App() {
         isOpen={isRejectModalOpen}
         onClose={() => setIsRejectModalOpen(false)}
         onConfirmReject={handleConfirmReject}
+      />
+
+      <CancelTripModal
+        trip={selectedTrip}
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        onConfirmCancel={handleConfirmCancel}
       />
 
       <ChangeDateModal

@@ -532,6 +532,7 @@ export class TripService {
     tripId: string,
     options: {
       isExecutante: boolean;
+      reason?: string;
       notes?: string;
     }
   ): TripRequest {
@@ -539,10 +540,19 @@ export class TripService {
       ? 'Cancelado pela Unidade Executante'
       : 'Cancelado pelo Demandante';
 
+    const combinedNotes = [
+      options.reason ? `Motivo do cancelamento: ${options.reason}` : '',
+      options.notes ? options.notes.trim() : '',
+    ]
+      .filter(Boolean)
+      .join(' — ');
+
     return this.saveTrip({
       id: tripId,
       status,
-      notes: options.notes,
+      rejection_reason: (options.reason as any) || undefined,
+      rejection_notes: options.notes?.trim() || undefined,
+      notes: combinedNotes || undefined,
       travel_report_status: 'Não Aplicável',
     });
   }
