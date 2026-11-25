@@ -183,7 +183,7 @@ CREATE OR REPLACE FUNCTION public.issue_trip_rating_token(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_trip public.trip_requests%ROWTYPE;

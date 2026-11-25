@@ -27,8 +27,10 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const rawSupabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+    // Remove /rest/v1 ou barras finais caso o usuário tenha colado a URL completa da Data API
+    const supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+    const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
     if (!supabaseUrl || !serviceRoleKey) {
       res.status(500).json({
@@ -39,8 +41,8 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const resendApiKey = process.env.RESEND_API_KEY || '';
-    const emailWebhookUrl = process.env.EMAIL_WEBHOOK_URL || '';
+    const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+    const emailWebhookUrl = (process.env.EMAIL_WEBHOOK_URL || '').trim();
     const emailFrom = process.env.EMAIL_FROM || 'SIG-FROTA UNILAB <onboarding@resend.dev>';
 
     if (!resendApiKey && !emailWebhookUrl) {
@@ -52,14 +54,18 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // 1. Emite token exclusivo no Supabase (valida processo, status concluído e limite máximo de 3 envios)
+    // 1. Emite token exclusivo no Supabase (compatível com chave legacy JWT `eyJ...` e nova `sb_secret_...`)
+    const supabaseHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      apikey: serviceRoleKey,
+    };
+    if (!serviceRoleKey.startsWith('sb_secret_')) {
+      supabaseHeaders.Authorization = `Bearer ${serviceRoleKey}`;
+    }
+
     const rpcResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/issue_trip_rating_token`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
+      headers: supabaseHeaders,
       body: JSON.stringify({
         p_trip_id: tripId,
         p_process_number: processNumber,
@@ -68,11 +74,18 @@ export default async function handler(req: any, res: any) {
 
     if (!rpcResponse.ok) {
       const errText = await rpcResponse.text();
+      console.error('Supabase RPC error:', rpcResponse.status, errText);
+      let friendlyMsg = `Erro ao validar a viagem no servidor (HTTP ${rpcResponse.status}).`;
+      if (errText.includes('issue_trip_rating_token')) {
+        friendlyMsg = 'Migração SQL da avaliação por e-mail ainda não foi executada no Supabase.';
+      } else if (errText.includes('gen_random_bytes')) {
+        friendlyMsg = 'Atualize o script SQL no Supabase (search_path extensions para geração de token).';
+      } else if (rpcResponse.status === 401 || rpcResponse.status === 403) {
+        friendlyMsg = 'Chave SUPABASE_SERVICE_ROLE_KEY inválida ou sem permissão na Vercel.';
+      }
       res.status(500).json({
         ok: false,
-        error: errText.includes('issue_trip_rating_token')
-          ? 'Migração SQL da avaliação por e-mail ainda não foi executada no Supabase.'
-          : 'Erro ao validar a viagem no servidor.',
+        error: friendlyMsg,
       });
       return;
     }
