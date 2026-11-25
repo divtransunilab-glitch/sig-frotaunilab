@@ -340,18 +340,20 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
         updatedLeg.distance_km = Number((updatedLeg.odometer_end - updatedLeg.odometer_start).toFixed(1));
       }
 
-      // Encadeia automaticamente o KM de chegada deste trecho como KM de saída do próximo trecho
-      if (patch.odometer_end !== undefined && index + 1 < next.length) {
+      // Mantém o KM de saída do próximo trecho sempre sincronizado com o KM de chegada deste trecho
+      if ('odometer_end' in patch && index + 1 < next.length) {
         const nextLeg = next[index + 1];
-        if (nextLeg.odometer_start === undefined || nextLeg.odometer_start === prev[index]?.odometer_end) {
-          next[index + 1] = {
-            ...nextLeg,
-            odometer_start: patch.odometer_end,
-            ...(nextLeg.odometer_end !== undefined && nextLeg.odometer_end >= patch.odometer_end
-              ? { distance_km: Number((nextLeg.odometer_end - patch.odometer_end).toFixed(1)) }
-              : {}),
-          };
-        }
+        const syncedStart = patch.odometer_end;
+        next[index + 1] = {
+          ...nextLeg,
+          odometer_start: syncedStart,
+          distance_km:
+            syncedStart !== undefined &&
+            nextLeg.odometer_end !== undefined &&
+            nextLeg.odometer_end >= syncedStart
+              ? Number((nextLeg.odometer_end - syncedStart).toFixed(1))
+              : undefined,
+        };
       }
 
       return next;
@@ -500,7 +502,7 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
         return { ...leg, distance_km: dist, finished_at: leg.finished_at || nowIso };
       }
       if (idx > 0) {
-        const startKm = leg.odometer_start ?? (idx === 1 ? firstArrivalKm : undefined);
+        const startKm = idx === 1 && firstArrivalKm !== undefined ? firstArrivalKm : leg.odometer_start;
         if (typeof startKm === 'number' && startKm > 0) {
           return { ...leg, odometer_start: startKm, started_at: leg.started_at || nowIso };
         }
