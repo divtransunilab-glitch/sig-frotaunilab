@@ -1,6 +1,7 @@
 import React from 'react';
 import { 
   LayoutDashboard, 
+  Radio,
   SendHorizontal, 
   CalendarDays, 
   BarChart3,
@@ -34,6 +35,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'dashboard',
       label: 'Visão Geral & Painel',
       icon: LayoutDashboard,
+      badge: null,
+    },
+    {
+      id: 'dailyBoard',
+      label: 'Quadro de Saídas (Hoje)',
+      icon: Radio,
       badge: null,
     },
     {

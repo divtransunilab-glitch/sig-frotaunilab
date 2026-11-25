@@ -6,6 +6,7 @@ import { DistanceService } from './services/distanceService';
 import { Header } from './components/common/Header';
 import { Sidebar } from './components/common/Sidebar';
 import { DashboardOverview } from './components/dashboard/DashboardOverview';
+import { DailyDispatchBoard } from './components/dashboard/DailyDispatchBoard';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { CalendarView } from './components/dashboard/CalendarView';
 import { DispatchQueue } from './components/dispatch/DispatchQueue';
@@ -562,6 +563,20 @@ export function App() {
               onOpenDispatchModal={handleOpenDispatchModal}
               onSelectTripDetail={handleSelectTripDetail}
               onNavigateTab={(tab) => setActiveTab(tab)}
+            />
+          )}
+
+          {/* Daily Live Departure Board (Modo Painel / TV) */}
+          {activeTab === 'dailyBoard' && (
+            <DailyDispatchBoard
+              trips={trips}
+              vehicles={vehicles}
+              drivers={drivers}
+              cities={cities}
+              onRefreshData={loadTrips}
+              onSelectTripDetail={handleSelectTripDetail}
+              onOpenDispatchModal={handleOpenDispatchModal}
+              onOpenTrafficOrderModal={handleOpenTrafficOrderModal}
             />
           )}
 
