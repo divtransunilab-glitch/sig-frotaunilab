@@ -468,6 +468,67 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
     }
   };
 
+  /**
+   * Salva os trechos preenchidos em andamento (ex.: quando o motorista informa o KM de saída do retorno),
+   * atualizando o status no Quadro de Saídas da DIVTRANS para "Retornando".
+   */
+  const handleSaveReturnProgress = async () => {
+    if (!trip) return;
+    setFeedback(null);
+
+    const hasReturnStart = tripLegs.some(
+      (leg, idx) => idx > 0 && typeof leg.odometer_start === 'number' && leg.odometer_start > 0
+    );
+    if (!hasReturnStart) {
+      setFeedback({
+        type: 'error',
+        message: 'Preencha o KM de Saída no trecho de retorno (Trecho 2) antes de registrar o início do retorno.',
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedLegs = tripLegs.map((leg, idx) =>
+      idx > 0 && typeof leg.odometer_start === 'number' && leg.odometer_start > 0
+        ? { ...leg, started_at: leg.started_at || nowIso }
+        : leg
+    );
+
+    const baseStart =
+      trip.odometer_start ||
+      updatedLegs[0]?.odometer_start ||
+      parseFloat(odometerStart) ||
+      0;
+
+    setIsSubmitting(true);
+    const res = await TripService.submitDriverCheckIn(trip.id, {
+      odometer_start: baseStart,
+      checkin_at: trip.driver_checkin_at || nowIso,
+      notes: (checkinNotes || trip.report_notes || '').trim() || undefined,
+      trip_legs: updatedLegs,
+      access_token: urlAccessToken || undefined,
+      driver_code: verifiedDriverCode || undefined,
+      verified_name: driver?.name,
+    });
+    setIsSubmitting(false);
+
+    if (res.trip) {
+      setTrip(res.trip);
+      setTripLegs(updatedLegs);
+      setFeedback({
+        type: res.syncedToCloud ? 'success' : 'warning',
+        message: res.syncedToCloud
+          ? 'Início do retorno registrado! O painel da DIVTRANS foi atualizado para "Retornando".'
+          : res.warning || 'Progresso salvo localmente.',
+      });
+    } else {
+      setFeedback({
+        type: 'error',
+        message: res.warning || 'Não foi possível registrar o início do retorno.',
+      });
+    }
+  };
+
   const handleCheckOut = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trip) return;
@@ -1277,6 +1338,21 @@ export const DriverTripView: React.FC<DriverTripViewProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Adicionar trecho extra (deslocamento local / parada)</span>
+                </button>
+
+                {/* Botão para avisar a DIVTRANS que iniciou o retorno (assim que preencher KM Saída do Trecho 2) */}
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleSaveReturnProgress}
+                  className="w-full py-2.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs flex items-center justify-center gap-2 transition-colors"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Navigation className="w-4 h-4" />
+                  )}
+                  <span>Registrar Início do Retorno (Atualizar Painel DIVTRANS)</span>
                 </button>
               </div>
 

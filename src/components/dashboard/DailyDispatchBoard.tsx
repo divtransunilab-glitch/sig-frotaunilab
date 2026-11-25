@@ -138,37 +138,17 @@ export const DailyDispatchBoard: React.FC<DailyDispatchBoardProps> = ({
     if (isFinished) return 'finished';
 
     if (trip.driver_checkin_at) {
-      // Verifica se o motorista já abriu um trecho de retorno/volta em trip_legs
+      // Só muda para 'returning' (Retornando) quando o motorista efetivamente informar
+      // o KM de saída no trecho de retorno (trecho 2+ em trip_legs)
       const legs = Array.isArray(trip.trip_legs) ? trip.trip_legs : [];
-      const hasReturnLegStarted =
-        legs.length >= 2 &&
-        legs.some((leg, idx) => {
-          const lbl = `${leg.origin || ''} ${leg.destination || ''} ${leg.notes || ''}`.toLowerCase();
-          return (
-            idx > 0 &&
-            (lbl.includes('retorno') ||
-              lbl.includes('volta') ||
-              leg.odometer_start !== undefined)
-          );
-        });
+      const hasReturnKmStarted = legs.some(
+        (leg, idx) =>
+          idx > 0 &&
+          ((typeof leg.odometer_start === 'number' && leg.odometer_start > 0) ||
+            Boolean(leg.started_at))
+      );
 
-      if (hasReturnLegStarted) return 'returning';
-
-      // Ou se já passou de 65% do tempo total previsto da viagem / está nas últimas 2h antes do retorno
-      try {
-        const dep = parseISO(trip.departure_datetime);
-        const ret = parseISO(trip.return_datetime);
-        if (isValid(dep) && isValid(ret) && ret.getTime() > dep.getTime()) {
-          const totalMins = Math.max(1, differenceInMinutes(ret, dep));
-          const elapsedMins = differenceInMinutes(now, dep);
-          const minsToReturn = differenceInMinutes(ret, now);
-          if (elapsedMins / totalMins >= 0.65 || minsToReturn <= 90) {
-            return 'returning';
-          }
-        }
-      } catch {
-        // ignore
-      }
+      if (hasReturnKmStarted) return 'returning';
 
       return 'in_progress';
     }
