@@ -14,6 +14,7 @@ import {
   X,
   Building,
   FileSpreadsheet,
+  BookOpen,
   Menu
 } from 'lucide-react';
 import { format, parseISO, isValid, differenceInCalendarDays } from 'date-fns';
@@ -398,6 +399,18 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Opções do Menu */}
                   <div className="p-1.5 space-y-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setActiveTab('tutorial');
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-900 font-semibold flex items-center gap-2.5 transition-colors"
+                    >
+                      <BookOpen className="w-4 h-4 text-indigo-600" />
+                      <span>Manual & Guia de Uso</span>
+                    </button>
+
                     {onOpenGoogleSheetsModal && (
                       <button
                         type="button"

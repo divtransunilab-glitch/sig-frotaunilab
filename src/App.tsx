@@ -26,6 +26,7 @@ import { TravelReportView } from './components/postTrip/TravelReportView';
 import { FleetManagement } from './components/fleet/FleetManagement';
 import { AuditView } from './components/audit/AuditView';
 import { ReportsView } from './components/reports/ReportsView';
+import { TutorialView } from './components/help/TutorialView';
 import { PublicPortal } from './components/public/PublicPortal';
 import { DriverTripView } from './components/driver/DriverTripView';
 import { AuditService } from './services/auditService';
@@ -609,6 +610,11 @@ export function App() {
               trips={trips}
               onOpenImportModal={() => setIsImportModalOpen(true)}
             />
+          )}
+
+          {/* Interactive Usability Manual & Driver Guide */}
+          {activeTab === 'tutorial' && (
+            <TutorialView onNavigateTab={setActiveTab} />
           )}
 
         </main>

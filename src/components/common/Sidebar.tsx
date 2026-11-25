@@ -9,6 +9,7 @@ import {
   Truck, 
   ClipboardCheck, 
   ShieldCheck,
+  BookOpen,
   LogOut,
   ExternalLink
 } from 'lucide-react';
@@ -83,6 +84,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'reports',
       label: 'Exportação & Planilhas (Excel/PDF)',
       icon: FileSpreadsheet,
+      badge: null,
+    },
+    {
+      id: 'tutorial',
+      label: 'Manual & Guia de Uso',
+      icon: BookOpen,
       badge: null,
     },
   ];
