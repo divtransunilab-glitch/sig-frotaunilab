@@ -144,7 +144,12 @@ export const KmAuditAndQuotaTab: React.FC<KmAuditAndQuotaTabProps> = ({
 
   const contractedVehicles = useMemo(() => {
     const contractedIds = new Set(contractedContractors.map((c) => c.id));
-    return vehicles.filter((v) => v.is_active && v.contractor_id && contractedIds.has(v.contractor_id));
+    return vehicles.filter((v) => {
+      if (!v.is_active) return false;
+      if (v.ownership_type === 'propria') return false;
+      if (v.ownership_type === 'contratada') return true;
+      return Boolean(v.contractor_id && contractedIds.has(v.contractor_id));
+    });
   }, [vehicles, contractedContractors]);
 
   // Viagens confirmadas do mês de referência da franquia
@@ -172,7 +177,9 @@ export const KmAuditAndQuotaTab: React.FC<KmAuditAndQuotaTabProps> = ({
           .toFixed(1)
       );
       const quotaKm =
-        quotaConfig.vehicleQuotas[v.id] !== undefined && quotaConfig.vehicleQuotas[v.id] > 0
+        v.monthly_km_quota !== undefined && v.monthly_km_quota > 0
+          ? v.monthly_km_quota
+          : quotaConfig.vehicleQuotas[v.id] !== undefined && quotaConfig.vehicleQuotas[v.id] > 0
           ? quotaConfig.vehicleQuotas[v.id]
           : quotaConfig.defaultVehicleMonthlyKm;
       const usagePercent = quotaKm > 0 ? Number(((usedKm / quotaKm) * 100).toFixed(1)) : 0;

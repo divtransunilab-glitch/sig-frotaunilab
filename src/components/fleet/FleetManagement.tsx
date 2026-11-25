@@ -48,10 +48,14 @@ export const FleetManagement: React.FC = () => {
   const [vModel, setVModel] = useState('');
   const [vType, setVType] = useState<VehicleType>('Sedan');
   const [vCapacity, setVCapacity] = useState<number>(5);
+  const [vOwnershipType, setVOwnershipType] = useState<'propria' | 'contratada'>('contratada');
   const [vContractorId, setVContractorId] = useState<string>('');
-  const [vFuelType, setVFuelType] = useState<any>('Diesel S10');
-  const [vAvgKmPerLiter, setVAvgKmPerLiter] = useState<number>(9.0);
-  const [vOpCost, setVOpCost] = useState<number>(0.40);
+  const [vFuelType, setVFuelType] = useState<any>('Gasolina');
+  const [vAvgKmPerLiter, setVAvgKmPerLiter] = useState<number>(10.0);
+  const [vOpCost, setVOpCost] = useState<number>(0.45);
+  const [vMonthlyKmQuota, setVMonthlyKmQuota] = useState<number>(3000);
+  const [vMonthlyFixedCost, setVMonthlyFixedCost] = useState<number>(0);
+  const [vExcessKmCost, setVExcessKmCost] = useState<number>(0);
 
   // Driver Modal
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
@@ -91,44 +95,74 @@ export const FleetManagement: React.FC = () => {
     setUnits(FleetService.getUnits());
   };
 
+  const isOwnFleetContractor = (c?: Contractor) => {
+    if (!c) return true;
+    const name = c.name.toLowerCase();
+    return c.id === 'cont-4' || name.includes('frota própria') || name.includes('frota propria') || name.includes('própria / unilab');
+  };
+
+  const getVehicleOwnership = (veh: Vehicle): 'propria' | 'contratada' => {
+    if (veh.ownership_type === 'propria' || veh.ownership_type === 'contratada') {
+      return veh.ownership_type;
+    }
+    if (!veh.contractor_id) return 'propria';
+    const c = contractors.find((item) => item.id === veh.contractor_id);
+    return isOwnFleetContractor(c) ? 'propria' : 'contratada';
+  };
+
   // --- VEHICLE HANDLERS ---
   const handleOpenVehicleModal = (veh?: Vehicle) => {
+    const contractedOnly = contractors.filter((c) => !isOwnFleetContractor(c));
     if (veh) {
+      const ownership = getVehicleOwnership(veh);
       setEditingVehicle(veh);
       setVPlate(veh.plate);
       setVModel(veh.model);
       setVType(veh.type);
       setVCapacity(veh.capacity);
-      setVContractorId(veh.contractor_id || '');
-      setVFuelType(veh.fuel_type || 'Diesel S10');
-      setVAvgKmPerLiter(veh.avg_km_per_liter || 9.0);
-      setVOpCost(veh.operational_cost_per_km || 0.40);
+      setVOwnershipType(ownership);
+      setVContractorId(ownership === 'contratada' ? (veh.contractor_id || contractedOnly[0]?.id || '') : '');
+      setVFuelType(veh.fuel_type || 'Gasolina');
+      setVAvgKmPerLiter(veh.avg_km_per_liter || 10.0);
+      setVOpCost(veh.operational_cost_per_km ?? 0.45);
+      setVMonthlyKmQuota(veh.monthly_km_quota ?? 3000);
+      setVMonthlyFixedCost(veh.monthly_fixed_cost ?? 0);
+      setVExcessKmCost(veh.excess_km_cost ?? 0);
     } else {
       setEditingVehicle(null);
       setVPlate('');
       setVModel('');
       setVType('Sedan');
       setVCapacity(5);
-      setVContractorId(contractors[0]?.id || '');
-      setVFuelType('Diesel S10');
-      setVAvgKmPerLiter(9.0);
-      setVOpCost(0.40);
+      setVOwnershipType('contratada');
+      setVContractorId(contractedOnly[0]?.id || '');
+      setVFuelType('Gasolina');
+      setVAvgKmPerLiter(10.0);
+      setVOpCost(0.45);
+      setVMonthlyKmQuota(3000);
+      setVMonthlyFixedCost(0);
+      setVExcessKmCost(0);
     }
     setIsVehicleModalOpen(true);
   };
 
   const handleSaveVehicle = (e: React.FormEvent) => {
     e.preventDefault();
+    const isOwn = vOwnershipType === 'propria';
     FleetService.saveVehicle({
       id: editingVehicle ? editingVehicle.id : undefined,
       plate: vPlate.toUpperCase(),
       model: vModel,
       type: vType,
       capacity: vCapacity,
-      contractor_id: vContractorId || undefined,
+      ownership_type: vOwnershipType,
+      contractor_id: isOwn ? undefined : (vContractorId || undefined),
       fuel_type: vFuelType,
       avg_km_per_liter: vAvgKmPerLiter,
-      operational_cost_per_km: vOpCost,
+      operational_cost_per_km: isOwn ? vOpCost : undefined,
+      monthly_km_quota: isOwn ? undefined : (vMonthlyKmQuota > 0 ? vMonthlyKmQuota : undefined),
+      monthly_fixed_cost: isOwn ? undefined : (vMonthlyFixedCost > 0 ? vMonthlyFixedCost : undefined),
+      excess_km_cost: isOwn ? undefined : (vExcessKmCost > 0 ? vExcessKmCost : undefined),
       is_active: true,
     });
     setIsVehicleModalOpen(false);
@@ -357,27 +391,73 @@ export const FleetManagement: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {vehicles.map((v) => (
+            {vehicles.map((v) => {
+              const isOwn = getVehicleOwnership(v) === 'propria';
+              return (
               <div
                 key={v.id}
                 className="bg-white rounded-2xl border border-slate-200/80 shadow-card p-5 space-y-3 hover:border-brand-300 transition-all"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-extrabold text-base text-navy-950 tracking-wider">
                     {v.plate}
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200">
-                    {v.type}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                        isOwn
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-purple-50 text-purple-700 border-purple-200'
+                      }`}
+                    >
+                      {isOwn ? 'Frota Própria' : 'Contratada'}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200">
+                      {v.type}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="text-xs space-y-1">
                   <div className="font-bold text-slate-800">{v.model}</div>
                   <div className="text-slate-500">Capacidade: <strong>{v.capacity} passageiros</strong></div>
-                  <div className="text-slate-500">
-                    Combustível: <strong className="text-slate-800">{v.fuel_type || 'Diesel S10'}</strong> ({v.avg_km_per_liter || 9.0} km/L)
-                  </div>
-                  <div className="text-slate-500">Contratada: <span className="font-medium text-slate-700">{getContractorName(v.contractor_id)}</span></div>
+
+                  {isOwn ? (
+                    <>
+                      <div className="text-slate-500">
+                        Combustível: <strong className="text-slate-800">{v.fuel_type || 'Gasolina'}</strong> ({v.avg_km_per_liter || 10.0} km/L)
+                      </div>
+                      <div className="text-slate-500">
+                        Manutenção/KM:{' '}
+                        <strong className="text-emerald-700">
+                          R$ {(v.operational_cost_per_km ?? 0.45).toFixed(2).replace('.', ',')}/km
+                        </strong>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-slate-500">
+                        Contratada: <span className="font-medium text-slate-700">{getContractorName(v.contractor_id)}</span>
+                      </div>
+                      <div className="text-slate-500">
+                        Franquia Mensal:{' '}
+                        <strong className="text-purple-700">
+                          {v.monthly_km_quota ? `${v.monthly_km_quota.toLocaleString('pt-BR')} km/mês` : 'Não definida'}
+                        </strong>
+                      </div>
+                      {(v.monthly_fixed_cost || v.excess_km_cost) && (
+                        <div className="text-[11px] text-slate-500">
+                          {v.monthly_fixed_cost
+                            ? `Fixo: R$ ${v.monthly_fixed_cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                            : ''}
+                          {v.monthly_fixed_cost && v.excess_km_cost ? ' • ' : ''}
+                          {v.excess_km_cost
+                            ? `Exced.: R$ ${v.excess_km_cost.toFixed(2).replace('.', ',')}/km`
+                            : ''}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {v.notes && (
@@ -409,7 +489,8 @@ export const FleetManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -672,7 +753,7 @@ export const FleetManagement: React.FC = () => {
       {/* MODAL VEÍCULO */}
       {isVehicleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-md overflow-hidden p-6 space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-lg max-h-[92vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="font-bold text-base text-navy-950">
                 {editingVehicle ? 'Editar Veículo' : 'Cadastrar Novo Veículo'}
@@ -737,50 +818,174 @@ export const FleetManagement: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Combustível</label>
-                  <select
-                    value={vFuelType}
-                    onChange={(e) => setVFuelType(e.target.value as any)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-hidden"
-                  >
-                    <option value="Diesel S10">Diesel S10</option>
-                    <option value="Gasolina">Gasolina</option>
-                    <option value="Etanol">Etanol</option>
-                    <option value="Flex">Flex</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Consumo (Km/L)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="1"
-                    max="40"
-                    value={vAvgKmPerLiter}
-                    onChange={(e) => setVAvgKmPerLiter(parseFloat(e.target.value) || 1)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-hidden"
-                  />
-                </div>
-              </div>
-
+              {/* Tipo de Frota: Própria vs Contratada */}
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Contratada / Proprietária</label>
-                <select
-                  value={vContractorId}
-                  onChange={(e) => setVContractorId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-hidden"
-                >
-                  <option value="">Frota Própria / UNILAB</option>
-                  {contractors.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block font-semibold text-slate-700 mb-1.5">Tipo de Frota *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVOwnershipType('propria');
+                      setVContractorId('');
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      vOwnershipType === 'propria'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Frota Própria (UNILAB)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVOwnershipType('contratada');
+                      if (!vContractorId) {
+                        const firstContracted = contractors.find((c) => !isOwnFleetContractor(c));
+                        if (firstContracted) setVContractorId(firstContracted.id);
+                      }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      vOwnershipType === 'contratada'
+                        ? 'bg-purple-700 text-white border-purple-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Frota Contratada
+                  </button>
+                </div>
               </div>
+
+              {vOwnershipType === 'propria' ? (
+                /* Campos específicos para FROTA PRÓPRIA */
+                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800">
+                    Custos Operacionais — Frota Própria
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Combustível</label>
+                      <select
+                        value={vFuelType}
+                        onChange={(e) => setVFuelType(e.target.value as any)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+                      >
+                        <option value="Gasolina">Gasolina</option>
+                        <option value="Diesel S10">Diesel S10</option>
+                        <option value="Etanol">Etanol</option>
+                        <option value="Flex">Flex</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Consumo (Km/L) *</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="1"
+                        max="40"
+                        required
+                        value={vAvgKmPerLiter}
+                        onChange={(e) => setVAvgKmPerLiter(parseFloat(e.target.value) || 1)}
+                        placeholder="Ex: 10.5"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Custo de Manutenção por KM Rodado (R$/km) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={vOpCost}
+                      onChange={(e) => setVOpCost(parseFloat(e.target.value) || 0)}
+                      placeholder="Ex: 0.45"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+                    />
+                    <p className="text-[10px] text-emerald-800/80 mt-1">
+                      Estimativa de desgaste, pneus, óleo e manutenção preventiva por km rodado.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                /* Campos específicos para FROTA CONTRATADA */
+                <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-200 space-y-3">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-purple-800">
+                    Empresa & Dados da Franquia Contratual
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Empresa Contratada *</label>
+                    <select
+                      value={vContractorId}
+                      required
+                      onChange={(e) => setVContractorId(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-hidden"
+                    >
+                      <option value="">Selecione a contratada...</option>
+                      {contractors
+                        .filter((c) => !isOwnFleetContractor(c))
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Franquia Mensal de Quilometragem (KM/mês) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={vMonthlyKmQuota}
+                      onChange={(e) => setVMonthlyKmQuota(parseInt(e.target.value, 10) || 0)}
+                      placeholder="Ex: 3000"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 font-bold focus:border-purple-500 focus:outline-hidden"
+                    />
+                    <p className="text-[10px] text-purple-800/80 mt-1">
+                      Usada automaticamente no alerta de 75% do Painel Inicial e no BI de Franquia.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Valor Mensal Fixo (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={vMonthlyFixedCost || ''}
+                        onChange={(e) => setVMonthlyFixedCost(parseFloat(e.target.value) || 0)}
+                        placeholder="Ex: 8500.00"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">KM Excedente (R$/km)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={vExcessKmCost || ''}
+                        onChange={(e) => setVExcessKmCost(parseFloat(e.target.value) || 0)}
+                        placeholder="Ex: 2.80"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
                 <button
@@ -805,7 +1010,7 @@ export const FleetManagement: React.FC = () => {
       {/* MODAL MOTORISTA */}
       {isDriverModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-md overflow-hidden p-6 space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-lg max-h-[92vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="font-bold text-base text-navy-950">
                 {editingDriver ? 'Editar Motorista' : 'Cadastrar Novo Motorista'}
@@ -935,7 +1140,7 @@ export const FleetManagement: React.FC = () => {
       {/* MODAL CONTRATADA */}
       {isContractorModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-md overflow-hidden p-6 space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-lg max-h-[92vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="font-bold text-base text-navy-950">
                 {editingContractor ? 'Editar Contratada' : 'Cadastrar Nova Contratada'}

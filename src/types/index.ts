@@ -86,11 +86,15 @@ export interface Vehicle {
   model: string;
   type: VehicleType;
   capacity: number;
+  ownership_type?: 'propria' | 'contratada'; // Frota Própria (UNILAB) vs Frota Contratada (Locadora)
   contractor_id?: string;
   is_active: boolean;
   fuel_type: FuelType;
   avg_km_per_liter: number; // ex: 13.5 km/L
-  operational_cost_per_km?: number; // Custo de manutenção, pneus, contrato por km
+  operational_cost_per_km?: number; // Custo de manutenção por km rodado (R$/km — Frota Própria)
+  monthly_km_quota?: number; // Franquia mensal de KM (Frota Contratada)
+  monthly_fixed_cost?: number; // Valor fixo mensal da franquia em R$ (Frota Contratada)
+  excess_km_cost?: number; // Valor por KM excedente em R$/km (Frota Contratada)
   notes?: string;
 }
 

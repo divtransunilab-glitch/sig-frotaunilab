@@ -63,11 +63,40 @@ export class FleetService {
     }
     localStorage.setItem(STORAGE_KEY_VEHICLES, JSON.stringify(vehicles));
 
-    // Sincroniza em segundo plano com o Supabase
+    // Sincroniza franquia mensal de KM com o painel de alertas (Dashboard 75% & BI)
+    if (saved.ownership_type === 'contratada' && saved.monthly_km_quota && saved.monthly_km_quota > 0) {
+      try {
+        const QUOTA_KEY = 'sigfrota_contractor_km_quotas_v1';
+        const raw = localStorage.getItem(QUOTA_KEY);
+        const parsed = raw ? JSON.parse(raw) : { defaultVehicleMonthlyKm: 3000, alertThresholdPercent: 75, vehicleQuotas: {} };
+        parsed.vehicleQuotas = {
+          ...(parsed.vehicleQuotas || {}),
+          [saved.id]: saved.monthly_km_quota,
+        };
+        localStorage.setItem(QUOTA_KEY, JSON.stringify(parsed));
+      } catch {
+        // ignore
+      }
+    }
+
+    // Sincroniza em segundo plano com o Supabase (com fallback caso as novas colunas ainda não existam)
     (async () => {
       try {
         const { error } = await supabase.from('vehicles').upsert([saved]);
-        if (error) console.error('Erro ao salvar veículo no Supabase:', error);
+        if (error) {
+          const msg = String(error.message || '');
+          if (
+            msg.includes('ownership_type') ||
+            msg.includes('monthly_km_quota') ||
+            msg.includes('excess_km_cost') ||
+            msg.includes('monthly_fixed_cost')
+          ) {
+            const { ownership_type, monthly_km_quota, excess_km_cost, monthly_fixed_cost, ...legacyPayload } = saved;
+            await supabase.from('vehicles').upsert([legacyPayload]);
+          } else {
+            console.error('Erro ao salvar veículo no Supabase:', error);
+          }
+        }
       } catch (err) {
         console.error('Falha ao enviar veículo ao Supabase:', err);
       }
